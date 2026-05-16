@@ -20,6 +20,7 @@ from pathlib import Path
 from .semver import parse_version
 
 _BUMP_LEVELS = ("patch", "minor", "major")
+_PRESERVED_FIELDS = ("name", "type", "version", "description", "homepage")
 
 # Parse host and vendor/name out of either https://host/vendor/name(.git) or git@host:vendor/name(.git)
 _REMOTE_HTTPS_RE = re.compile(r"^https?://([^/]+)/([^/]+/[^/]+?)(?:\.git)?/?$")
@@ -113,3 +114,24 @@ def detect_package(pkg_dir: Path) -> dict:
     version = _highest_tag_version(pkg_dir) or "0.0.0"
 
     return {"name": name, "type": pkg_type, "version": version, "homepage": homepage}
+
+
+def merge_manifest(existing: dict | None, detected: dict) -> dict:
+    """Combine an existing cleo.json with detected fields.
+
+    For every preserved field, the existing value wins. Detected values are
+    only used when the existing dict has no entry for that field. Detected
+    values that are None are skipped entirely (no key emitted).
+    """
+    out: dict = {}
+    existing = existing or {}
+    for field in _PRESERVED_FIELDS:
+        if field in existing:
+            out[field] = existing[field]
+        elif detected.get(field) is not None:
+            out[field] = detected[field]
+    # Preserve any non-standard fields the author added.
+    for k, v in existing.items():
+        if k not in out:
+            out[k] = v
+    return out

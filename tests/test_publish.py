@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
-from lib.publish import bump_version, detect_package
+from lib.publish import bump_version, detect_package, merge_manifest
 
 
 def _git(cwd, *args):
@@ -126,3 +126,51 @@ class TestDetectPackage:
         d = detect_package(tmp_path)
         assert d["name"] == "acme/widgets"
         assert d["homepage"] == "https://gitlab.com/acme/widgets"
+
+
+class TestMergeManifest:
+    def test_no_existing_uses_all_detected(self):
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": "https://github.com/a/b"}
+        merged = merge_manifest(None, detected)
+        assert merged == detected
+
+    def test_existing_name_wins(self):
+        existing = {"name": "x/y"}
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        merged = merge_manifest(existing, detected)
+        assert merged["name"] == "x/y"
+
+    def test_existing_type_wins(self):
+        existing = {"type": "mixed"}
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        merged = merge_manifest(existing, detected)
+        assert merged["type"] == "mixed"
+
+    def test_existing_version_wins(self):
+        existing = {"version": "5.0.0"}
+        detected = {"name": "a/b", "type": "skills-pack", "version": "1.2.3", "homepage": None}
+        merged = merge_manifest(existing, detected)
+        assert merged["version"] == "5.0.0"
+
+    def test_existing_description_preserved(self):
+        existing = {"description": "hand-written"}
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        merged = merge_manifest(existing, detected)
+        assert merged["description"] == "hand-written"
+
+    def test_description_absent_when_not_in_existing(self):
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        merged = merge_manifest(None, detected)
+        assert "description" not in merged
+
+    def test_homepage_existing_wins(self):
+        existing = {"homepage": "https://example.com"}
+        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": "https://github.com/a/b"}
+        merged = merge_manifest(existing, detected)
+        assert merged["homepage"] == "https://example.com"
+
+    def test_none_fields_in_detected_omitted(self):
+        detected = {"name": None, "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        merged = merge_manifest(None, detected)
+        assert "name" not in merged
+        assert "homepage" not in merged
