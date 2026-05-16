@@ -953,6 +953,95 @@ def install_package(
     return lock_pkg
 
 
+def _install_from_local_dir(
+    project: Path, name: str, url: str, *,
+    cache_dir: Path, bucket: str, install_mode: str = "copy", quiet: bool = False,
+) -> Optional[LockPackage]:
+    """Install a package whose source lives at `cache_dir` on disk (no clone).
+
+    Mirrors `install_package`'s materialize loop but skips fetch and version
+    resolution. Used by the local-path source form.
+    """
+    try:
+        pkg_manifest = _read_package_manifest(cache_dir)
+        validate_package_manifest(pkg_manifest, name)
+    except SecurityViolation as exc:
+        err(f"{name}: {exc}")
+        return None
+
+    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    if pkg_type not in VALID_PKG_TYPES:
+        err(f"{name}: unknown package type {pkg_type!r}")
+        return None
+
+    items_found = discover_items(cache_dir)
+    has_mcp_json = (cache_dir / "mcp.json").exists()
+    try:
+        validate_package_has_artifacts(
+            items_count=len(items_found),
+            has_mcp_json=has_mcp_json,
+            pkg_type=pkg_type,
+        )
+    except SecurityViolation as exc:
+        err(f"{name}: {exc}")
+        return None
+
+    lock_pkg = LockPackage(
+        name=name, pkg_type=pkg_type, url=url,
+        version="0.0.0+local", commit="0" * 40, bucket=bucket,
+        install_mode=install_mode,
+    )
+
+    if pkg_type in ("skills-pack", "mixed"):
+        if bucket == BUCKET_USER:
+            forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
+            if forbidden:
+                err(f"{name}: user bucket does not support {', '.join(forbidden)}")
+                return None
+        for type_, item_name, item_path in items_found:
+            if type_ == "hook":
+                continue
+            try:
+                validate_dest_item_name(item_name)
+                source_p = _source_for_item(type_, item_name, item_path, cache_dir)
+                validate_item_source(source_p, cache_dir)
+            except SecurityViolation as exc:
+                err(f"{name}: {exc}")
+                return None
+            dst = _dest_path(project, type_, name, item_name, bucket)
+            if install_mode == "symlink":
+                try:
+                    _materialize_symlink(source_p, dst)
+                except OSError as exc:
+                    warn(f"{name}: symlink not permitted ({exc}); falling back to copy")
+                    _materialize(source_p, dst)
+                    lock_pkg.install_mode = "copy"
+            else:
+                _materialize(source_p, dst)
+            sha = sha256_artifact(dst)
+            lock_pkg.items.append(LockItem(type=type_, name=item_name, path=str(dst), sha=sha))
+            if not quiet:
+                ok(f"  {type_} {item_name}")
+
+        try:
+            hook_names = install_hooks(project, bucket, name, cache_dir, quiet=quiet)
+        except SecurityViolation:
+            return None
+        for hn in hook_names:
+            lock_pkg.items.append(LockItem(type="hook", name=hn, path="", sha=""))
+        if bucket == BUCKET_LOCAL:
+            _write_gitignore_block(project)
+
+    if pkg_type in ("mcp-server", "mixed"):
+        server_key = install_mcp_server(project, bucket, name, cache_dir, quiet=quiet)
+        lock_pkg.mcp_server_key = server_key
+
+    if not quiet:
+        item_count = len([i for i in lock_pkg.items if i.type != "hook"])
+        ok(f"{name} [local, {pkg_type}] {item_count} item(s)")
+    return lock_pkg
+
+
 # ---- Subcommands --------------------------------------------------------
 
 
@@ -1108,8 +1197,34 @@ def cmd_require(args: argparse.Namespace) -> int:
         return 0
 
     if src.kind == SourceKind.LOCAL_PATH:
-        err("local path source form not yet implemented (task B4)")
-        return 1
+        pkg_ref = src.name
+        try:
+            validate_package_ref(pkg_ref)
+        except SecurityViolation as exc:
+            err(str(exc))
+            return 1
+        bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
+        if manifest is None:
+            scaffold_manifest(project)
+            manifest = load_manifest(project)
+
+        cache_dir = src.local_path
+        install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+        result = _install_from_local_dir(
+            project, pkg_ref, f"file://{src.local_path}",
+            cache_dir=src.local_path, bucket=bucket,
+            install_mode=install_mode, quiet=args.quiet,
+        )
+        if result is None:
+            return 1
+        manifest_add_package(project, pkg_ref, "*", bucket, f"file://{src.local_path}")
+        lock = load_lock(project)
+        lock[pkg_ref] = result
+        if not args.dry_run:
+            save_lock(project, lock)
+        if not args.quiet:
+            ok(f"Added {pkg_ref} (local: {src.local_path})")
+        return 0
 
     pkg_ref = src.name
     repo_url = explicit_repo or src.url

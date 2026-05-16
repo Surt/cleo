@@ -906,3 +906,33 @@ def test_require_subdir_form_installs_only_subdir(tmp_path, monkeypatch):
     assert rc == 0
     skills_dir = project / ".claude" / "skills"
     assert (skills_dir / "cleo-owner-foo-foo").exists()
+
+
+def test_require_local_path_installs_without_clone(tmp_path, monkeypatch):
+    """`cleo require ./local-pkg` installs from filesystem; no git clone."""
+    import cleo as cleo_mod
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    src_pkg = tmp_path / "local-pkg"
+    src_pkg.mkdir()
+    (src_pkg / "cleo.json").write_text(
+        '{"name":"local/local-pkg","type":"skills-pack","version":"0.0.1"}\n',
+        encoding="utf-8",
+    )
+    skill_dir = src_pkg / "skills" / "hello"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: hello\ndescription: hi\n---\nbody\n", encoding="utf-8"
+    )
+
+    # Guard: clone must NOT be called.
+    def boom(*a, **kw):
+        raise AssertionError("clone called for local-path install")
+    monkeypatch.setattr(cleo_mod, "_clone_or_fetch", boom)
+    monkeypatch.setattr(cleo_mod, "_clone_or_fetch_subdir", boom, raising=False)
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    rc = cleo_mod.main(["--project", str(project), "require", str(src_pkg), "--quiet"])
+    assert rc == 0
+    assert (project / ".claude" / "skills" / "cleo-local-local-pkg-hello").exists()
