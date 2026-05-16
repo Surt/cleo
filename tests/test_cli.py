@@ -411,3 +411,32 @@ class TestSymlinkEscapeGate:
         assert r.returncode != 0
         # Project must not contain the smuggled skill.
         assert not (proj / ".claude" / "skills" / "cleo-v-p-evil").exists()
+
+
+# ---- Security gate: oversized hooks rejected --------------------------------
+
+class TestHookSizeGate:
+    def test_oversized_hook_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        (pkg / "hooks").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # 64 KiB + 1 byte.
+        (pkg / "hooks" / "PreToolUse.sh").write_bytes(b"#" * (64 * 1024 + 1))
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        # Hook must not have been copied.
+        assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()

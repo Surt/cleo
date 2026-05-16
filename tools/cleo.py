@@ -543,6 +543,16 @@ def install_hooks(
     if not hook_scripts:
         return []
 
+    # Pre-flight: reject the WHOLE package if any hook is oversized. We do
+    # this before any copy so a single bad hook doesn't leave half the package
+    # installed on disk.
+    for script in hook_scripts:
+        try:
+            validate_hook_size(script)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            raise
+
     safe_pkg = pkg_name.replace("/", "-")
     dest_hooks_dir = project / ".claude" / "hooks" / f"cleo-{safe_pkg}"
     installed_names = []
@@ -746,7 +756,10 @@ def install_package(
                 ok(f"  {type_} {item_name}")
 
         # Hooks
-        hook_names = install_hooks(project, bucket, name, cache_dir, dry_run=dry_run, quiet=quiet)
+        try:
+            hook_names = install_hooks(project, bucket, name, cache_dir, dry_run=dry_run, quiet=quiet)
+        except SecurityViolation:
+            return None
         for hn in hook_names:
             lock_pkg.items.append(LockItem(type="hook", name=hn, path="", sha=""))
 
