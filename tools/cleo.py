@@ -1558,7 +1558,7 @@ def main(argv: list[str]) -> int:
                    help="Symlink artifacts from cache (live updates) instead of copying")
     s.set_defaults(fn=cmd_install)
 
-    s = sub.add_parser("require", help="Add a package to cleo.json and install it", parents=[common_sub])
+    s = sub.add_parser("require", aliases=["add"], help="Add a package to cleo.json and install it", parents=[common_sub])
     s.add_argument("package", help="<vendor/name>[@constraint]")
     s.add_argument("--constraint", "-c", default="*")
     s.add_argument("--repo", help="Git URL for the package")
@@ -1569,7 +1569,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_require)
 
-    s = sub.add_parser("remove", help="Remove packages, clean up files, update manifest", parents=[common_sub])
+    s = sub.add_parser("remove", aliases=["rm"], help="Remove packages, clean up files, update manifest", parents=[common_sub])
     s.add_argument("packages", nargs="+", metavar="vendor/pkg")
     s.set_defaults(fn=cmd_remove)
 
@@ -1580,7 +1580,7 @@ def main(argv: list[str]) -> int:
     s.add_argument("--force", action="store_true", help="Overwrite hand-edited files")
     s.set_defaults(fn=cmd_update)
 
-    s = sub.add_parser("list", help="List installed packages", parents=[common_sub])
+    s = sub.add_parser("list", aliases=["ls"], help="List installed packages", parents=[common_sub])
     s.add_argument("--json", action="store_true")
     s.add_argument("--verbose", "-v", action="store_true")
     s.set_defaults(fn=cmd_list)

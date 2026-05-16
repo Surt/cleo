@@ -971,3 +971,46 @@ def test_require_local_path_installs_without_clone(tmp_path, monkeypatch):
     rc = cleo_mod.main(["--project", str(project), "require", str(src_pkg), "--quiet"])
     assert rc == 0
     assert (project / ".claude" / "skills" / "cleo-local-local-pkg-hello").exists()
+
+
+# ---- C1: verb aliases (add / ls / rm) ---------------------------------------
+
+def test_alias_add_dispatches_to_require(tmp_path, monkeypatch):
+    """`cleo add foo/bar` invokes cmd_require."""
+    import cleo as cleo_mod
+    calls = {}
+    def fake_require(args):
+        calls["called"] = True
+        calls["package"] = args.package
+        return 0
+    monkeypatch.setattr(cleo_mod, "cmd_require", fake_require)
+    rc = cleo_mod.main(["--project", str(tmp_path), "add", "foo/bar", "--quiet"])
+    assert rc == 0
+    assert calls.get("called")
+    assert calls["package"] == "foo/bar"
+
+
+def test_alias_ls_dispatches_to_list(tmp_path, monkeypatch):
+    import cleo as cleo_mod
+    calls = {}
+    def fake_list(args):
+        calls["called"] = True
+        return 0
+    monkeypatch.setattr(cleo_mod, "cmd_list", fake_list)
+    rc = cleo_mod.main(["--project", str(tmp_path), "ls"])
+    assert rc == 0
+    assert calls.get("called")
+
+
+def test_alias_rm_dispatches_to_remove(tmp_path, monkeypatch):
+    import cleo as cleo_mod
+    calls = {}
+    def fake_remove(args):
+        calls["called"] = True
+        calls["packages"] = args.packages
+        return 0
+    monkeypatch.setattr(cleo_mod, "cmd_remove", fake_remove)
+    rc = cleo_mod.main(["--project", str(tmp_path), "rm", "foo/bar"])
+    assert rc == 0
+    assert calls.get("called")
+    assert calls["packages"] == ["foo/bar"]
