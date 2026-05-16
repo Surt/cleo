@@ -1253,6 +1253,21 @@ def cmd_publish(args: argparse.Namespace) -> int:
             err(e)
         return 1
 
+    if args.commit:
+        version_for_subject = merged.get("version", "0.0.0")
+        if publish_mod.working_tree_dirty(pkg_dir, ["cleo.json"]):
+            try:
+                publish_mod.commit_file(
+                    pkg_dir, "cleo.json", f"chore(publish): v{version_for_subject}",
+                )
+            except RuntimeError as exc:
+                err(str(exc))
+                return 1
+            if not args.quiet:
+                ok(f"committed cleo.json (v{version_for_subject})")
+        elif not args.quiet:
+            info("cleo.json already committed — nothing to do")
+
     if not args.quiet:
         ok(f"{merged['name']} {merged.get('version', '?')} [{merged.get('type')}] — validation passed")
     return 0
@@ -1325,6 +1340,8 @@ def main(argv: list[str]) -> int:
                    help="Path to the package repo (default: cwd)")
     s.add_argument("--bump", choices=["patch", "minor", "major"], default=None,
                    help="Bump version in cleo.json before validating")
+    s.add_argument("--commit", action="store_true",
+                   help="git add cleo.json and commit it")
     s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)

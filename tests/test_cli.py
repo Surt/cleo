@@ -73,6 +73,14 @@ def file_url(path: Path) -> str:
     return "file:///" + str(path).replace("\\", "/")
 
 
+def _git_log_subjects(pkg_dir: Path) -> list[str]:
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "log", "--format=%s"],
+        capture_output=True, text=True, check=True,
+    )
+    return r.stdout.strip().splitlines()
+
+
 # ---- B3: --project flag works before AND after the subcommand ---------------
 
 class TestProjectFlagPosition:
@@ -721,3 +729,23 @@ class TestPublishBump:
         pkg = tmp_path / "pkg"; self._make_pkg(pkg)
         r = run_cleo("publish", "--bump", "weird", "--package", str(pkg))
         assert r.returncode != 0
+
+
+class TestPublishCommit:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_commit_creates_manifest_commit_when_bumping(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--commit", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert _git_log_subjects(pkg)[0] == "chore(publish): v0.1.1"
+
+    def test_commit_skips_when_clean_no_bump(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r1 = run_cleo("publish", "--commit", "--package", str(pkg))
+        assert r1.returncode == 0, r1.stderr
+        before = _git_log_subjects(pkg)
+        r2 = run_cleo("publish", "--commit", "--package", str(pkg))
+        assert r2.returncode == 0, r2.stderr
+        assert _git_log_subjects(pkg) == before
