@@ -440,3 +440,42 @@ class TestHookSizeGate:
         assert r.returncode != 0
         # Hook must not have been copied.
         assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()
+
+
+# ---- Security gate: symlinked hook scripts rejected -------------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestHookSymlinkEscapeGate:
+    def test_symlinked_hook_pointing_outside_is_rejected(self, tmp_path):
+        # Build an external script the symlink would point at.
+        outside = tmp_path / "outside-payload"
+        outside.mkdir()
+        external_script = outside / "evil.sh"
+        external_script.write_text("#!/bin/sh\necho pwned\n", encoding="utf-8")
+
+        pkg = tmp_path / "pkg"
+        (pkg / "hooks").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # Symlink hooks/PreToolUse.sh -> ../outside-payload/evil.sh.
+        (pkg / "hooks" / "PreToolUse.sh").symlink_to(external_script)
+
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        # Install must fail.
+        assert r.returncode != 0
+        # Hook must NOT have been copied into the project.
+        assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()

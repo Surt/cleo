@@ -543,12 +543,13 @@ def install_hooks(
     if not hook_scripts:
         return []
 
-    # Pre-flight: reject the WHOLE package if any hook is oversized. We do
-    # this before any copy so a single bad hook doesn't leave half the package
-    # installed on disk.
+    # Pre-flight: reject the WHOLE package if any hook is oversized OR
+    # symlinks outside the cache. Done before any copy so a single bad hook
+    # doesn't leave half the package installed on disk.
     for script in hook_scripts:
         try:
             validate_hook_size(script)
+            validate_item_source(script, cache_dir)
         except SecurityViolation as exc:
             err(f"{pkg_name}: {exc}")
             raise

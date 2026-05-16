@@ -29,18 +29,18 @@ def validate_package_manifest(manifest: dict | None, expected_name: str) -> None
         return
     if not isinstance(manifest, dict):
         raise SecurityViolation(
-            f"{expected_name}: package cleo.json must be a JSON object"
+            "package cleo.json must be a JSON object"
         )
     if "type" in manifest and manifest["type"] not in VALID_PKG_TYPES:
         raise SecurityViolation(
-            f"{expected_name}: unknown type {manifest['type']!r} "
+            f"unknown type {manifest['type']!r} "
             f"(expected one of {', '.join(sorted(VALID_PKG_TYPES))})"
         )
     if "name" in manifest:
         name = manifest["name"]
         if not isinstance(name, str) or not _PKG_NAME_RE.match(name):
             raise SecurityViolation(
-                f"{expected_name}: package name {name!r} must match "
+                f"package name {name!r} must match "
                 f"<vendor>/<name> with [a-z0-9._-] chars only"
             )
 
