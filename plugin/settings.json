@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 ~/.claude/cleo/tools/cleo.py*)",
+      "Bash(python3 *cleo.py*)",
+      "Bash(git ls-remote*)",
+      "Bash(git clone*)",
+      "Bash(git fetch*)",
+      "Bash(git -C * checkout*)",
+      "Bash(git -C * pull*)"
+    ]
+  }
+}

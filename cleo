@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# cleo — Claude ecosystem dependency manager
+# Usage: cleo <subcommand> [args...]
+# Symlink or copy to a directory on your PATH, e.g.:
+#   ln -s /path/to/cleo/cleo /usr/local/bin/cleo
+
+CLEO_ROOT="$(cd "$(dirname "$(realpath "$0" 2>/dev/null || readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+exec python3 "$CLEO_ROOT/tools/cleo.py" "$@"
