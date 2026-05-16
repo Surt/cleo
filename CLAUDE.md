@@ -14,6 +14,9 @@ tools/
   lib/
     semver.py                     ← semver parsing + constraint resolution
     checks.py                     ← frontmatter validation
+    security.py                   ← security gates (path traversal, ref shape, etc.)
+    sources.py                    ← source-form parsing for `cleo require`
+    adopt.py                      ← filesystem scan + provenance for `cleo update --adopt`
 spec/                             ← format specs (cleo.json, cleo.lock, package-format)
 cleo                              ← bash wrapper for standalone CLI
 cleo.cmd                          ← Windows wrapper
