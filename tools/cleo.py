@@ -1280,10 +1280,46 @@ def cmd_require(args: argparse.Namespace) -> int:
 
 
 def cmd_update(args: argparse.Namespace) -> int:
-    project = args.project.resolve()
-    manifest = load_manifest(project)
-    lock = load_lock(project)
+    from lib.adopt import scan_untracked
 
+    project = args.project.resolve()
+    # Load manifest and lock conditionally so scan runs even when files are missing.
+    if _manifest_path(project).exists():
+        manifest = load_manifest(project)
+    else:
+        manifest = {}
+    if _lock_path(project).exists():
+        lock = load_lock(project)
+    else:
+        lock = {}
+
+    # ---- Pre-scan: surface untracked SKILL.md dirs in scope ----
+    scope = getattr(args, "scope", "both")
+    scan_dirs: list[Path] = []
+    if scope in ("project", "both"):
+        scan_dirs.append(project / ".claude" / "skills")
+    if scope in ("global", "both"):
+        scan_dirs.append(_user_home() / ".claude" / "skills")
+
+    tracked_paths: set[Path] = set()
+    for pkg in lock.values():
+        for item in pkg.items:
+            if item.path:
+                tracked_paths.add(Path(item.path))
+
+    discoveries = []
+    for sd in scan_dirs:
+        discoveries.extend(scan_untracked(sd, tracked_paths))
+
+    if discoveries and not getattr(args, "adopt", False):
+        names = ", ".join(d.skill_name for d in discoveries)
+        info(
+            f"note: {len(discoveries)} untracked skill director"
+            f"{'y' if len(discoveries) == 1 else 'ies'} found ({names})"
+        )
+        info("      re-run with --adopt to register them.")
+
+    # ---- Existing update loop continues here ----
     if not lock:
         info("No packages installed. Run: cleo install")
         return 0

@@ -1085,3 +1085,42 @@ def test_update_has_adopt_flag(tmp_path):
     out = buf.getvalue()
     assert "--adopt" in out
     assert "--scope" in out
+
+
+def test_update_reports_untracked_without_adopting(tmp_path, monkeypatch, capsys):
+    """`cleo update` finds untracked skill dirs in .claude/skills/ and prints a note,
+    but does NOT modify cleo.json or cleo.lock.
+    """
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    # Create global skills/ with one untracked dir.
+    user_home = tmp_path / "home"
+    global_skills = user_home / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    untracked = global_skills / "untracked-skill"
+    untracked.mkdir()
+    (untracked / "SKILL.md").write_text(
+        "---\nname: untracked-skill\ndescription: x\n---\n", encoding="utf-8"
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+    (project / "cleo.lock").write_text(
+        json.dumps({"version": 1, "generated": "x", "packages": {}}), encoding="utf-8"
+    )
+
+    rc = cleo_mod.main(["--project", str(project), "update", "--scope", "global"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "untracked-skill" in out
+    assert "--adopt" in out
+
+    # cleo.json + cleo.lock unchanged.
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    assert manifest.get("require") == {}
+    lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
+    assert lock["packages"] == {}
