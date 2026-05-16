@@ -48,3 +48,5 @@ The engine:
 /cleo-remove acme/cleo-example
 /cleo-remove acme/cleo-example acme/cleo-mcp-example
 ```
+
+Alias: `cleo rm <pkg>` is equivalent to `cleo remove <pkg>`.

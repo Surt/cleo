@@ -116,3 +116,5 @@ Inform the user: `[cleo/require] Created cleo.json.`
 /cleo-require acme/cleo-generic --symlink
 /cleo-require acme/cleo-generic --dry-run
 ```
+
+Alias: `cleo add <source>` is equivalent to `cleo require <source>`.
