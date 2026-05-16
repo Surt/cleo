@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+# Direct-import shim for unit-testing internal helpers (subprocess CLI tests follow below).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 from cleo import _materialize_symlink
@@ -672,3 +673,30 @@ class TestMaterializeSymlink:
             pytest.skip("symlink not permitted on this platform")
         assert dst.is_symlink()
         assert not (dst / "stale.md").exists()
+
+    def test_materialize_symlink_replaces_existing_symlink_at_dst(self, tmp_path):
+        src = tmp_path / "src_skill"
+        src.mkdir()
+        (src / "SKILL.md").write_text("---\nname: foo\n---\n", encoding="utf-8")
+
+        other = tmp_path / "other_dir"
+        other.mkdir()
+        (other / "junk.md").write_text("nope", encoding="utf-8")
+
+        dst = tmp_path / "dst" / "cleo-foo-bar"
+        dst.parent.mkdir(parents=True)
+        try:
+            dst.symlink_to(other)
+        except OSError:
+            import pytest
+            pytest.skip("symlink not permitted on this platform")
+
+        try:
+            _materialize_symlink(src, dst)
+        except OSError:
+            import pytest
+            pytest.skip("symlink not permitted on this platform")
+        assert dst.is_symlink()
+        assert dst.resolve() == src.resolve()  # now points at src, not other
+        # The pre-existing dst symlink was replaced — its old target (other/) is unaffected.
+        assert (other / "junk.md").exists()

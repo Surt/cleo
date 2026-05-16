@@ -682,18 +682,33 @@ def _materialize(src: Path, dst: Path) -> None:
 
 
 def _materialize_symlink(src: Path, dst: Path) -> None:
-    """Symlink dst → src. Replaces existing dst (dir, file, or symlink).
+    """Symlink dst → src. Replaces existing dst atomically via tmp-rename.
 
     Raises OSError if the OS rejects symlink creation (Windows without
-    developer mode / admin). Callers are responsible for fallback.
+    developer mode / admin). On failure, dst is left in its prior state.
+    Callers are responsible for fallback.
     """
+    assert src.exists(), f"_materialize_symlink: src must exist: {src}"
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists() or dst.is_symlink():
-        if dst.is_dir() and not dst.is_symlink():
-            shutil.rmtree(dst)
+
+    tmp = dst.with_name(dst.name + ".tmp")
+    # Clean stale tmp (best-effort; if cleanup fails, the symlink call will fail loudly).
+    if tmp.is_symlink() or tmp.exists():
+        if tmp.is_dir() and not tmp.is_symlink():
+            shutil.rmtree(tmp)
         else:
-            dst.unlink()
-    os.symlink(src.resolve(), dst, target_is_directory=src.is_dir())
+            tmp.unlink()
+
+    # Build the symlink at tmp. If this raises OSError (Windows no-privilege),
+    # dst is untouched.
+    os.symlink(src.resolve(), tmp, target_is_directory=src.is_dir())
+
+    # Atomic swap. os.replace on POSIX renames over an existing target file/symlink
+    # atomically. For directory dst we have to remove first, narrowing the
+    # window to just the rename call.
+    if dst.is_dir() and not dst.is_symlink():
+        shutil.rmtree(dst)
+    os.replace(tmp, dst)
 
 
 # ---- Install a single package -------------------------------------------
