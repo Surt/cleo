@@ -63,3 +63,35 @@ class TestValidatePackageManifestRejections:
             validate_package_manifest(
                 {"name": "../../etc/passwd", "type": "skills-pack"}, "v/p"
             )
+
+
+from lib.security import validate_dest_item_name
+
+
+class TestValidateDestItemName:
+    def test_valid_kebab_name(self):
+        validate_dest_item_name("my-skill")
+        validate_dest_item_name("rule_name")
+        validate_dest_item_name("agent.v2")
+
+    def test_rejects_empty(self):
+        with pytest.raises(SecurityViolation, match="empty"):
+            validate_dest_item_name("")
+
+    def test_rejects_path_traversal(self):
+        with pytest.raises(SecurityViolation, match="path separator"):
+            validate_dest_item_name("../evil")
+        with pytest.raises(SecurityViolation, match="path separator"):
+            validate_dest_item_name("evil/sub")
+        with pytest.raises(SecurityViolation, match="path separator"):
+            validate_dest_item_name("evil\\sub")
+
+    def test_rejects_dot_names(self):
+        with pytest.raises(SecurityViolation, match="reserved"):
+            validate_dest_item_name(".")
+        with pytest.raises(SecurityViolation, match="reserved"):
+            validate_dest_item_name("..")
+
+    def test_rejects_null_byte(self):
+        with pytest.raises(SecurityViolation, match="null byte"):
+            validate_dest_item_name("evil\x00name")

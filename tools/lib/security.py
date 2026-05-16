@@ -42,3 +42,17 @@ def validate_package_manifest(manifest: dict | None, expected_name: str) -> None
                 f"{expected_name}: package name {name!r} must match "
                 f"<vendor>/<name> with [a-z0-9._-] chars only"
             )
+
+
+def validate_dest_item_name(name: str) -> None:
+    """Reject item names that could escape the destination directory."""
+    if not name:
+        raise SecurityViolation("item name is empty")
+    if "\x00" in name:
+        raise SecurityViolation(f"item name {name!r} contains null byte")
+    if "/" in name or "\\" in name:
+        raise SecurityViolation(
+            f"item name {name!r} contains path separator"
+        )
+    if name in (".", ".."):
+        raise SecurityViolation(f"item name {name!r} is a reserved path token")
