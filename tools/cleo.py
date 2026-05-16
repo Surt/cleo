@@ -46,6 +46,7 @@ from lib.checks import discover_items, parse_frontmatter  # noqa: E402
 from lib.semver import resolve_version, resolve_commit, parse_version, matches_constraint  # noqa: E402
 from lib.security import (  # noqa: E402
     SecurityViolation,
+    validate_git_ref,
     validate_package_has_artifacts,
     validate_package_manifest,
     validate_package_ref,
@@ -388,6 +389,12 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
     discarded and re-cloned. Guards against tag mutation and cross-test
     contamination.
     """
+    try:
+        validate_git_ref(url)
+        validate_git_ref(tag)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return False
     git_dir = cache_dir / ".git"
     if git_dir.exists():
         if expected_commit:
@@ -401,7 +408,7 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
     cache_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
-            ["git", "clone", "--depth=1", "--branch", tag, url, str(cache_dir)],
+            ["git", "clone", "--depth=1", "--branch", tag, "--", url, str(cache_dir)],
             capture_output=True, text=True,
         )
         return result.returncode == 0
@@ -916,6 +923,12 @@ def cmd_require(args: argparse.Namespace) -> int:
     # Resolve URL — falls back to GitHub convention automatically.
     if not repo_url:
         repo_url = _resolve_url(data, pkg_ref, None)
+
+    try:
+        validate_git_ref(repo_url)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return 1
 
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")

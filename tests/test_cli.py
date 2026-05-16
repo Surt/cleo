@@ -573,3 +573,26 @@ class TestPackageRefGateManifest:
             assert "v/../../tmp/evil" not in lock.get("packages", {})
         combined = (r.stdout + r.stderr).lower()
         assert "package reference" in combined or "vendor" in combined
+
+
+# ---- Security gate: leading-dash tag/url rejected ---------------------------
+
+class TestGitRefGate:
+    def test_cli_require_with_leading_dash_url_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        # Use = syntax so argparse passes the leading-dash value to cleo rather
+        # than treating it as a flag; this lets the security gate (not argparse)
+        # produce the rejection.
+        r = run_cleo(
+            "require", "v/p", "-c", "*",
+            "--repo=-upload-pack=evil",
+            "--project", str(proj),
+        )
+        assert r.returncode != 0, (
+            f"leading-dash URL should be rejected; "
+            f"stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        combined = (r.stdout + r.stderr).lower()
+        assert "git ref" in combined or "leading" in combined or "potential" in combined

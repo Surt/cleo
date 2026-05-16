@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from .security import SecurityViolation, validate_git_ref
+
 
 # ---- Version ---------------------------------------------------------------
 
@@ -135,8 +137,12 @@ def fetch_tags(url: str, *, timeout: int = 30) -> list[str]:
     Uses `git ls-remote --tags`. Returns [] on any failure.
     """
     try:
+        validate_git_ref(url)
+    except SecurityViolation:
+        return []
+    try:
         result = subprocess.run(
-            ["git", "ls-remote", "--tags", url],
+            ["git", "ls-remote", "--tags", "--", url],
             capture_output=True, text=True, timeout=timeout,
         )
         if result.returncode != 0:
@@ -179,8 +185,13 @@ def resolve_version(url: str, constraint: str, *, offline: bool = False) -> Opti
 def resolve_commit(url: str, tag: str) -> Optional[str]:
     """Return the commit SHA that a tag points to (follows peeled refs)."""
     try:
+        validate_git_ref(url)
+        validate_git_ref(tag)
+    except SecurityViolation:
+        return None
+    try:
         result = subprocess.run(
-            ["git", "ls-remote", "--tags", url, tag, f"{tag}^{{}}"],
+            ["git", "ls-remote", "--tags", "--", url, tag, f"{tag}^{{}}"],
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
