@@ -13,6 +13,8 @@ All git invocations route through validate_git_ref (lib/security) and use
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -135,3 +137,26 @@ def merge_manifest(existing: dict | None, detected: dict) -> dict:
         if k not in out:
             out[k] = v
     return out
+
+
+def _serialize_manifest(data: dict) -> str:
+    return json.dumps(data, indent=2) + "\n"
+
+
+def write_manifest(pkg_dir: Path, data: dict) -> bool:
+    """Atomically write data to pkg_dir/cleo.json. Return True if disk
+    content actually changed; False if the new bytes match what was already
+    on disk."""
+    path = pkg_dir / "cleo.json"
+    new_text = _serialize_manifest(data)
+    if path.exists():
+        try:
+            current = path.read_text(encoding="utf-8")
+            if current == new_text:
+                return False
+        except OSError:
+            pass
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(new_text, encoding="utf-8")
+    os.replace(tmp, path)
+    return True

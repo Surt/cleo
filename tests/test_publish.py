@@ -1,6 +1,7 @@
 """Tests for tools/lib/publish.py."""
 from __future__ import annotations
 
+import json as _json
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
-from lib.publish import bump_version, detect_package, merge_manifest
+from lib.publish import bump_version, detect_package, merge_manifest, write_manifest
 
 
 def _git(cwd, *args):
@@ -174,3 +175,32 @@ class TestMergeManifest:
         merged = merge_manifest(None, detected)
         assert "name" not in merged
         assert "homepage" not in merged
+
+
+class TestWriteManifest:
+    def test_creates_file_when_absent(self, tmp_path):
+        changed = write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        assert changed is True
+        loaded = _json.loads((tmp_path / "cleo.json").read_text(encoding="utf-8"))
+        assert loaded == {"name": "a/b", "type": "skills-pack"}
+
+    def test_returns_false_when_identical(self, tmp_path):
+        data = {"name": "a/b", "type": "skills-pack"}
+        write_manifest(tmp_path, data)
+        changed = write_manifest(tmp_path, data)
+        assert changed is False
+
+    def test_returns_true_when_field_added(self, tmp_path):
+        write_manifest(tmp_path, {"name": "a/b"})
+        changed = write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        assert changed is True
+
+    def test_returns_true_when_value_changes(self, tmp_path):
+        write_manifest(tmp_path, {"name": "a/b", "version": "1.0.0"})
+        changed = write_manifest(tmp_path, {"name": "a/b", "version": "1.0.1"})
+        assert changed is True
+
+    def test_writes_trailing_newline(self, tmp_path):
+        write_manifest(tmp_path, {"name": "a/b"})
+        text = (tmp_path / "cleo.json").read_text(encoding="utf-8")
+        assert text.endswith("\n")
