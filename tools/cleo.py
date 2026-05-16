@@ -46,6 +46,7 @@ from lib.checks import discover_items, parse_frontmatter  # noqa: E402
 from lib.semver import resolve_version, resolve_commit, parse_version, matches_constraint  # noqa: E402
 from lib.security import (  # noqa: E402
     SecurityViolation,
+    validate_package_has_artifacts,
     validate_package_manifest,
     validate_item_source,
     validate_hook_size,
@@ -724,6 +725,24 @@ def install_package(
         err(f"{name}: unknown package type {pkg_type!r} (expected one of {', '.join(VALID_PKG_TYPES)})")
         return None
 
+    # Discover artifacts up front so the empty-package gate can run before
+    # anything is materialized.
+    if not dry_run:
+        items_found = discover_items(cache_dir)
+        has_mcp_json = (cache_dir / "mcp.json").exists()
+        try:
+            validate_package_has_artifacts(
+                items_count=len(items_found),
+                has_mcp_json=has_mcp_json,
+                pkg_type=pkg_type,
+            )
+        except SecurityViolation as exc:
+            err(f"{name}: {exc}")
+            return None
+    else:
+        items_found = []
+        has_mcp_json = False
+
     lock_pkg = LockPackage(
         name=name, pkg_type=pkg_type, url=url,
         version=version, commit=commit, bucket=bucket,
@@ -731,7 +750,6 @@ def install_package(
 
     # Materialize artifacts (rules/skills/agents/commands/hooks)
     if pkg_type in ("skills-pack", "mixed") and not dry_run:
-        items_found = discover_items(cache_dir)
         if bucket == BUCKET_USER:
             forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
             if forbidden:

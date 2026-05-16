@@ -154,6 +154,7 @@ cleo refuses to install packages that trip any of the following gates. Failures 
 | Item name | A skill/rule/agent/command/hook has a name containing `/`, `\`, `..`, `.`, or a null byte | Install aborts before any file is copied |
 | Symlink escape | Any artifact source path resolves outside the package's cache directory (e.g. a symlinked skill dir pointing at `/etc/`) | Install aborts before any file is copied |
 | Hook size | Any hook script in `hooks/` exceeds 64 KiB | Install aborts before any hook is copied |
+| Empty package | Package contributes no items AND no `mcp.json`, given its declared `type` | Install aborts with a hint that this may be the wrong repo |
 
 These gates are non-configurable and run on every `cleo install` / `cleo require` / `cleo update`. They protect against malicious or malformed packages; they do not validate intent — a hook that fits in 64 KiB and a manifest that parses are NOT vouched for by cleo.
 

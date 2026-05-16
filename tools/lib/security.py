@@ -91,3 +91,27 @@ def validate_hook_size(hook_path: Path) -> None:
             f"hook {hook_path.name} ({size} bytes) exceeds limit of "
             f"{HOOK_SIZE_MAX_BYTES} bytes"
         )
+
+
+def validate_package_has_artifacts(
+    items_count: int, has_mcp_json: bool, pkg_type: str
+) -> None:
+    """Reject packages that contribute nothing to .claude/ or settings.json.
+
+    A repo with only a cleo.json (or just a README) is almost certainly the
+    wrong repo or an unfinished package. Refusing to install is friendlier
+    than silently writing an empty lock entry.
+    """
+    if pkg_type == "skills-pack" and items_count == 0:
+        raise SecurityViolation(
+            "package has no recognized artifacts (rules/, skills/, agents/, "
+            "commands/, hooks/) — is this the right repo?"
+        )
+    if pkg_type == "mcp-server" and not has_mcp_json:
+        raise SecurityViolation(
+            "package declares type 'mcp-server' but ships no mcp.json"
+        )
+    if pkg_type == "mixed" and items_count == 0 and not has_mcp_json:
+        raise SecurityViolation(
+            "package declares type 'mixed' but ships neither artifacts nor mcp.json"
+        )

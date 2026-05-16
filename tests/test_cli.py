@@ -479,3 +479,41 @@ class TestHookSymlinkEscapeGate:
         assert r.returncode != 0
         # Hook must NOT have been copied into the project.
         assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()
+
+
+# ---- Security gate: empty package rejected ----------------------------------
+
+class TestEmptyPackageGate:
+    def test_package_with_no_artifacts_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # cleo.json declares type, but the repo has NO artifact dirs
+        # and NO mcp.json — just a README.
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        (pkg / "README.md").write_text("# v/p\nempty\n", encoding="utf-8")
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0, (
+            f"empty package should be rejected; got stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        # Package must NOT be in the project manifest.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})
+        # No lock file written (no successful install).
+        if (proj / "cleo.lock").exists():
+            import json as _j
+            lock = _j.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
+            assert "v/p" not in lock.get("packages", {})

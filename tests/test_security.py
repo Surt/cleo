@@ -158,3 +158,35 @@ class TestValidateHookSize:
         hook.write_bytes(b"#" * (HOOK_SIZE_MAX_BYTES + 1))
         with pytest.raises(SecurityViolation, match="exceeds"):
             validate_hook_size(hook)
+
+
+from lib.security import validate_package_has_artifacts
+
+
+class TestValidatePackageHasArtifacts:
+    def test_skills_pack_with_items_ok(self):
+        validate_package_has_artifacts(items_count=3, has_mcp_json=False, pkg_type="skills-pack")
+
+    def test_skills_pack_empty_rejected(self):
+        with pytest.raises(SecurityViolation, match="no recognized artifacts"):
+            validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="skills-pack")
+
+    def test_mcp_server_with_mcp_json_ok(self):
+        validate_package_has_artifacts(items_count=0, has_mcp_json=True, pkg_type="mcp-server")
+
+    def test_mcp_server_without_mcp_json_rejected(self):
+        with pytest.raises(SecurityViolation, match="ships no mcp.json"):
+            validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="mcp-server")
+
+    def test_mixed_with_items_only_ok(self):
+        validate_package_has_artifacts(items_count=2, has_mcp_json=False, pkg_type="mixed")
+
+    def test_mixed_with_mcp_only_ok(self):
+        validate_package_has_artifacts(items_count=0, has_mcp_json=True, pkg_type="mixed")
+
+    def test_mixed_with_both_ok(self):
+        validate_package_has_artifacts(items_count=2, has_mcp_json=True, pkg_type="mixed")
+
+    def test_mixed_with_nothing_rejected(self):
+        with pytest.raises(SecurityViolation, match="neither artifacts nor mcp.json"):
+            validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="mixed")
