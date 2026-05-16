@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
-from lib.publish import bump_version, detect_package, merge_manifest, write_manifest
+from lib.publish import bump_version, detect_package, merge_manifest, write_manifest, current_remote_url, tag_at_head, tag_exists
 
 
 def _git(cwd, *args):
@@ -357,3 +357,47 @@ class TestValidatePublishDryInstall:
         _commit_and_tag(pkg)
         errors = validate_publish(pkg)
         assert any("mcp" in e.lower() for e in errors)
+
+
+class TestGitopsReadHelpers:
+    def test_tag_exists_true(self, tmp_path):
+        _init_repo(tmp_path, remote="https://github.com/a/b.git")
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        _git(tmp_path, "tag", "v1.0.0")
+        assert tag_exists(tmp_path, "v1.0.0") is True
+
+    def test_tag_exists_false(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        assert tag_exists(tmp_path, "v1.0.0") is False
+
+    def test_tag_at_head_true(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        _git(tmp_path, "tag", "v1.0.0")
+        assert tag_at_head(tmp_path, "v1.0.0") is True
+
+    def test_tag_at_head_false(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        _git(tmp_path, "tag", "v1.0.0")
+        (tmp_path / "x").write_text("z", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "y")
+        assert tag_at_head(tmp_path, "v1.0.0") is False
+
+    def test_current_remote_url(self, tmp_path):
+        _init_repo(tmp_path, remote="https://github.com/a/b.git")
+        assert current_remote_url(tmp_path, "origin") == "https://github.com/a/b.git"
+
+    def test_current_remote_url_missing(self, tmp_path):
+        _init_repo(tmp_path)
+        assert current_remote_url(tmp_path, "origin") is None

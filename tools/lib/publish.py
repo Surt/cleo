@@ -26,6 +26,7 @@ from .checks import discover_items, parse_frontmatter
 from .security import (
     SecurityViolation,
     validate_dest_item_name,
+    validate_git_ref,
     validate_hook_size,
     validate_item_source,
     validate_manifest_file_not_symlink,
@@ -322,3 +323,24 @@ def _dry_install(pkg_dir: Path) -> list[str]:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
     return errors
+
+
+def tag_exists(pkg_dir: Path, tag: str) -> bool:
+    validate_git_ref(tag)
+    out = _git_capture(pkg_dir, "tag", "--list", tag)
+    return bool(out)
+
+
+def tag_at_head(pkg_dir: Path, tag: str) -> bool:
+    """True if the named tag points at the same commit as HEAD."""
+    validate_git_ref(tag)
+    head = _git_capture(pkg_dir, "rev-parse", "HEAD")
+    tag_sha = _git_capture(pkg_dir, "rev-parse", f"refs/tags/{tag}^{{commit}}")
+    if not head or not tag_sha:
+        return False
+    return head == tag_sha
+
+
+def current_remote_url(pkg_dir: Path, remote: str) -> str | None:
+    validate_git_ref(remote)
+    return _git_capture(pkg_dir, "remote", "get-url", remote)
