@@ -137,3 +137,24 @@ class TestValidateItemSource:
         outside_file.write_text("payload")
         with pytest.raises(SecurityViolation, match="outside the package"):
             validate_item_source(outside_file, cache)
+
+
+from lib.security import validate_hook_size, HOOK_SIZE_MAX_BYTES
+
+
+class TestValidateHookSize:
+    def test_small_hook_ok(self, tmp_path):
+        hook = tmp_path / "h.sh"
+        hook.write_text("#!/bin/sh\necho hi\n")
+        validate_hook_size(hook)
+
+    def test_at_limit_ok(self, tmp_path):
+        hook = tmp_path / "h.sh"
+        hook.write_bytes(b"#" * HOOK_SIZE_MAX_BYTES)
+        validate_hook_size(hook)
+
+    def test_over_limit_rejected(self, tmp_path):
+        hook = tmp_path / "h.sh"
+        hook.write_bytes(b"#" * (HOOK_SIZE_MAX_BYTES + 1))
+        with pytest.raises(SecurityViolation, match="exceeds"):
+            validate_hook_size(hook)

@@ -79,3 +79,15 @@ def validate_item_source(src: Path, cache_root: Path) -> None:
         raise SecurityViolation(
             f"source {src} resolves outside the package cache ({real_src})"
         ) from None
+
+
+HOOK_SIZE_MAX_BYTES = 64 * 1024  # 64 KiB
+
+
+def validate_hook_size(hook_path: Path) -> None:
+    size = hook_path.stat().st_size
+    if size > HOOK_SIZE_MAX_BYTES:
+        raise SecurityViolation(
+            f"hook {hook_path.name} ({size} bytes) exceeds limit of "
+            f"{HOOK_SIZE_MAX_BYTES} bytes"
+        )
