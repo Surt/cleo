@@ -1635,6 +1635,10 @@ def main(argv: list[str]) -> int:
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--offline", action="store_true")
     s.add_argument("--force", action="store_true", help="Overwrite hand-edited files")
+    s.add_argument("--adopt", action="store_true",
+                   help="Register untracked SKILL.md directories found in .claude/skills/")
+    s.add_argument("--scope", choices=["project", "global", "both"], default="both",
+                   help="Where to scan for untracked skills (default: both)")
     s.set_defaults(fn=cmd_update)
 
     s = sub.add_parser("list", aliases=["ls"], help="List installed packages", parents=[common_sub])

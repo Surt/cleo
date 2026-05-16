@@ -1071,3 +1071,17 @@ def test_find_no_match_returns_zero(tmp_path, capsys):
     )
     rc = cleo_mod.main(["--project", str(project), "find", "zzz"])
     assert rc == 0
+
+
+def test_update_has_adopt_flag(tmp_path):
+    """`cleo update --help` exits 0 and mentions --adopt and --scope."""
+    import cleo as cleo_mod
+    import io, contextlib, pytest
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        with pytest.raises(SystemExit) as exc:
+            cleo_mod.main(["update", "--help"])
+        assert exc.value.code == 0
+    out = buf.getvalue()
+    assert "--adopt" in out
+    assert "--scope" in out
