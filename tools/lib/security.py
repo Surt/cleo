@@ -134,3 +134,22 @@ def validate_package_ref(ref: str) -> None:
             f"package reference {ref!r} must match <vendor>/<name> "
             f"with [a-z0-9._-] chars only"
         )
+
+
+def validate_git_ref(value: str) -> None:
+    """Reject tag/URL strings that could smuggle args into git subprocess.
+
+    Defense alongside the `--` separator used at call sites: even with
+    `--`, a leading-dash value still confuses humans reading commands and
+    some shells/runners. Null bytes and newlines break command logging.
+    """
+    if not value:
+        raise SecurityViolation("git ref is empty")
+    if "\x00" in value:
+        raise SecurityViolation(f"git ref {value!r} contains null byte")
+    if "\n" in value or "\r" in value:
+        raise SecurityViolation(f"git ref {value!r} contains newline")
+    if value.startswith("-"):
+        raise SecurityViolation(
+            f"git ref {value!r} has leading '-' (potential arg injection)"
+        )

@@ -226,3 +226,36 @@ class TestValidatePackageRef:
     def test_rejects_extra_slash(self):
         with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
             validate_package_ref("v/p/extra")
+
+
+from lib.security import validate_git_ref
+
+
+class TestValidateGitRef:
+    def test_valid_tag(self):
+        validate_git_ref("v1.2.3")
+        validate_git_ref("1.0.0")
+        validate_git_ref("release-2024-01")
+
+    def test_valid_url(self):
+        validate_git_ref("https://github.com/v/p")
+        validate_git_ref("git@github.com:v/p.git")
+        validate_git_ref("file:///tmp/repo")
+
+    def test_rejects_empty(self):
+        with pytest.raises(SecurityViolation, match="empty"):
+            validate_git_ref("")
+
+    def test_rejects_leading_dash(self):
+        with pytest.raises(SecurityViolation, match="leading"):
+            validate_git_ref("-evil-tag")
+        with pytest.raises(SecurityViolation, match="leading"):
+            validate_git_ref("--upload-pack=cmd")
+
+    def test_rejects_null_byte(self):
+        with pytest.raises(SecurityViolation, match="null byte"):
+            validate_git_ref("v1.0\x00.0")
+
+    def test_rejects_newline(self):
+        with pytest.raises(SecurityViolation, match="newline"):
+            validate_git_ref("v1.0\nmalicious")
