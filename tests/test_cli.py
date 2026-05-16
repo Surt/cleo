@@ -700,3 +700,76 @@ class TestMaterializeSymlink:
         assert dst.resolve() == src.resolve()  # now points at src, not other
         # The pre-existing dst symlink was replaced — its old target (other/) is unaffected.
         assert (other / "junk.md").exists()
+
+
+# ---- install_package: install_mode wiring ------------------------------------
+
+
+def test_install_package_records_symlink_mode(tmp_path, monkeypatch):
+    """install_package with install_mode='symlink' records it on the LockPackage."""
+    import pytest, sys
+    if sys.platform == "win32":
+        pytest.skip("symlink mode test runs on POSIX (Windows needs dev-mode)")
+    from cleo import install_package, _pkg_cache_dir
+
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    name = "test/pkg"
+    version = "1.0.0"
+    cache = _pkg_cache_dir(name, version)
+    cache.mkdir(parents=True)
+    (cache / "cleo.json").write_text(
+        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n',
+        encoding="utf-8",
+    )
+    skill_dir = cache / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: my-skill\ndescription: x\n---\nbody\n", encoding="utf-8"
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    result = install_package(
+        project, name, "https://example/test/pkg", "1.0.0", "project",
+        locked_version=version, locked_commit="0" * 40,
+        install_mode="symlink", quiet=True,
+    )
+    assert result is not None
+    assert result.install_mode == "symlink"
+    dst = project / ".claude" / "skills" / "cleo-test-pkg-my-skill"
+    assert dst.is_symlink()
+
+
+def test_install_package_records_copy_mode_default(tmp_path, monkeypatch):
+    """install_package defaults to install_mode='copy' and copies (not symlinks)."""
+    from cleo import install_package, _pkg_cache_dir
+
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    name = "test/pkg"
+    version = "1.0.0"
+    cache = _pkg_cache_dir(name, version)
+    cache.mkdir(parents=True)
+    (cache / "cleo.json").write_text(
+        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n',
+        encoding="utf-8",
+    )
+    skill_dir = cache / "skills" / "my-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: my-skill\ndescription: x\n---\nbody\n", encoding="utf-8"
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    result = install_package(
+        project, name, "https://example/test/pkg", "1.0.0", "project",
+        locked_version=version, locked_commit="0" * 40,
+        quiet=True,
+    )
+    assert result is not None
+    assert result.install_mode == "copy"
+    dst = project / ".claude" / "skills" / "cleo-test-pkg-my-skill"
+    assert dst.is_dir()
+    assert not dst.is_symlink()

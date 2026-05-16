@@ -723,6 +723,7 @@ def install_package(
     *,
     locked_version: Optional[str] = None,
     locked_commit: Optional[str] = None,
+    install_mode: str = "copy",
     dry_run: bool = False,
     offline: bool = False,
     quiet: bool = False,
@@ -804,6 +805,7 @@ def install_package(
     lock_pkg = LockPackage(
         name=name, pkg_type=pkg_type, url=url,
         version=version, commit=commit, bucket=bucket,
+        install_mode=install_mode,
     )
 
     # Materialize artifacts (rules/skills/agents/commands/hooks)
@@ -826,7 +828,15 @@ def install_package(
                 err(f"{name}: {exc}")
                 return None
             dst = _dest_path(project, type_, name, item_name, bucket)
-            _materialize(src, dst)
+            if install_mode == "symlink":
+                try:
+                    _materialize_symlink(src, dst)
+                except OSError as exc:
+                    warn(f"{name}: symlink not permitted ({exc}); falling back to copy")
+                    _materialize(src, dst)
+                    lock_pkg.install_mode = "copy"
+            else:
+                _materialize(src, dst)
             sha = sha256_artifact(dst)
             lock_pkg.items.append(LockItem(type=type_, name=item_name, path=str(dst), sha=sha))
             if not quiet:
