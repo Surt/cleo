@@ -1,0 +1,91 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+from lib.adopt import scan_untracked, Discovery
+
+
+def _make_skill(parent: Path, name: str) -> Path:
+    d = parent / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: desc for {name}\n---\nbody\n",
+        encoding="utf-8",
+    )
+    return d
+
+
+def test_scan_finds_untracked_skill_dirs(tmp_path):
+    skills = tmp_path / ".claude" / "skills"
+    skills.mkdir(parents=True)
+    _make_skill(skills, "foo")
+    _make_skill(skills, "bar")
+
+    discoveries = scan_untracked(skills, tracked_paths=set())
+    names = {d.skill_name for d in discoveries}
+    assert names == {"foo", "bar"}
+
+
+def test_scan_skips_tracked_paths(tmp_path):
+    skills = tmp_path / ".claude" / "skills"
+    skills.mkdir(parents=True)
+    foo = _make_skill(skills, "foo")
+    _make_skill(skills, "bar")
+
+    discoveries = scan_untracked(skills, tracked_paths={foo.resolve()})
+    names = {d.skill_name for d in discoveries}
+    assert names == {"bar"}
+
+
+def test_scan_skips_cleo_namespaced_dirs(tmp_path):
+    skills = tmp_path / ".claude" / "skills"
+    skills.mkdir(parents=True)
+    _make_skill(skills, "cleo-vendor-pkg-myskill")  # cleo-managed prefix
+    _make_skill(skills, "foo")
+
+    discoveries = scan_untracked(skills, tracked_paths=set())
+    names = {d.skill_name for d in discoveries}
+    assert names == {"foo"}
+
+
+def test_scan_records_symlink_provenance(tmp_path):
+    # Symlink target inside a git working tree → provenance recoverable
+    upstream = tmp_path / "upstream-repo"
+    upstream.mkdir()
+    (upstream / ".git").mkdir()  # fake git marker
+    skill_src = _make_skill(upstream, "linked-skill")
+
+    skills = tmp_path / ".claude" / "skills"
+    skills.mkdir(parents=True)
+    link = skills / "linked-skill"
+    try:
+        link.symlink_to(skill_src)
+    except OSError:
+        import pytest
+        pytest.skip("symlink not permitted on this platform")
+
+    discoveries = scan_untracked(skills, tracked_paths=set())
+    assert len(discoveries) == 1
+    d = discoveries[0]
+    assert d.skill_name == "linked-skill"
+    assert d.symlink_target == skill_src.resolve()
+    assert d.is_symlink
+
+
+def test_scan_records_no_provenance_for_plain_dir(tmp_path):
+    skills = tmp_path / ".claude" / "skills"
+    skills.mkdir(parents=True)
+    _make_skill(skills, "plain")
+
+    discoveries = scan_untracked(skills, tracked_paths=set())
+    assert len(discoveries) == 1
+    d = discoveries[0]
+    assert d.skill_name == "plain"
+    assert d.symlink_target is None
+    assert not d.is_symlink
+
+
+def test_scan_handles_missing_directory(tmp_path):
+    nonexistent = tmp_path / "does-not-exist"
+    discoveries = scan_untracked(nonexistent, tracked_paths=set())
+    assert discoveries == []
