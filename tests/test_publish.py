@@ -206,7 +206,7 @@ class TestWriteManifest:
         assert text.endswith("\n")
 
 
-from lib.publish import commit_file, working_tree_dirty, validate_publish
+from lib.publish import commit_file, working_tree_dirty, validate_publish, create_tag, push
 
 
 def _git_log_subject(pkg_dir: Path) -> list[str]:
@@ -450,3 +450,48 @@ class TestGitopsCommit:
         _git(tmp_path, "commit", "-qm", "init")
         with pytest.raises(RuntimeError, match="nothing to commit"):
             commit_file(tmp_path, "cleo.json", "noop")
+
+
+class TestGitopsTagAndPush:
+    def test_create_tag_creates_annotated_tag_at_head(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        create_tag(tmp_path, "v1.0.0")
+        assert tag_exists(tmp_path, "v1.0.0") is True
+        assert tag_at_head(tmp_path, "v1.0.0") is True
+        out = subprocess.run(
+            ["git", "-C", str(tmp_path), "cat-file", "-p", "v1.0.0"],
+            capture_output=True, text=True,
+        ).stdout
+        assert "tagger" in out
+
+    def test_create_tag_rejects_existing(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        _git(tmp_path, "tag", "v1.0.0")
+        with pytest.raises(RuntimeError):
+            create_tag(tmp_path, "v1.0.0")
+
+    def test_push_sends_branch_and_tag(self, tmp_path):
+        bare = tmp_path / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", "-b", "main", "-q", str(bare)],
+            check=True, capture_output=True,
+        )
+        local = tmp_path / "local"
+        local.mkdir()
+        _init_repo(local, remote=str(bare))
+        (local / "x").write_text("y", encoding="utf-8")
+        _git(local, "add", "-A")
+        _git(local, "commit", "-qm", "init")
+        create_tag(local, "v1.0.0")
+        push(local, "origin", ["HEAD:refs/heads/main", "v1.0.0"])
+        r = subprocess.run(
+            ["git", "-C", str(bare), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        )
+        assert "v1.0.0" in r.stdout

@@ -367,3 +367,28 @@ def commit_file(pkg_dir: Path, path: str, message: str) -> None:
     )
     if r.returncode != 0:
         raise RuntimeError(f"git commit failed: {r.stderr.strip()}")
+
+
+def create_tag(pkg_dir: Path, tag: str) -> None:
+    """Create an annotated tag on HEAD. Raise RuntimeError on git failure."""
+    validate_git_ref(tag)
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "tag", "-a", "-m", tag, "--", tag],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"git tag failed: {r.stderr.strip()}")
+
+
+def push(pkg_dir: Path, remote: str, refs: list[str]) -> None:
+    """Push the given refs to remote. Raise RuntimeError on git failure."""
+    validate_git_ref(remote)
+    for ref in refs:
+        # Allow `HEAD:refs/heads/<branch>` form; only validate the source side.
+        validate_git_ref(ref.split(":", 1)[0])
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "push", remote, *refs],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"git push failed: {r.stderr.strip()}")
