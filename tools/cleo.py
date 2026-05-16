@@ -1411,6 +1411,11 @@ def cmd_update(args: argparse.Namespace) -> int:
             err(str(exc).replace(f"{TAG} ", ""))
             continue
 
+        if url.startswith("file://"):
+            # Local-path or adopted packages have no git version tags; skip silently.
+            already_current += 1
+            continue
+
         if not args.offline:
             resolved = resolve_version(url, constraint)
             if resolved is None:

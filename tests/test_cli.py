@@ -1222,3 +1222,55 @@ def test_update_with_adopt_dry_run_does_not_write(tmp_path, monkeypatch, capsys)
     assert "dry-skill" in out
     manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
     assert manifest["require-user"] == {}  # unchanged
+
+
+def test_full_migration_roundtrip(tmp_path, monkeypatch, capsys):
+    """End-to-end: simulate vercel-labs/skills install, then cleo update --adopt,
+    then plain cleo update (no further discoveries, no churn).
+    """
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    # Simulate `npx skills add foo/bar` — drops a skill in ~/.claude/skills/.
+    global_skills = tmp_path / "home" / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    pre_existing = global_skills / "preexisting"
+    pre_existing.mkdir()
+    (pre_existing / "SKILL.md").write_text(
+        "---\nname: preexisting\ndescription: from vercel-labs\n---\n",
+        encoding="utf-8",
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+
+    # Step 1: bare update reports discovery.
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global",
+    ])
+    out1 = capsys.readouterr().out
+    assert rc == 0
+    assert "preexisting" in out1
+    assert "--adopt" in out1
+
+    # Step 2: update --adopt registers.
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global", "--adopt", "--quiet",
+    ])
+    capsys.readouterr()
+    assert rc == 0
+    lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
+    assert any("preexisting" in name for name in lock["packages"])
+
+    # Step 3: another plain update reports NO new discoveries.
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global",
+    ])
+    out3 = capsys.readouterr().out
+    assert rc == 0
+    assert "preexisting" not in out3
+    assert "untracked" not in out3
