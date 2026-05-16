@@ -144,6 +144,19 @@ hooks/
 └── PostToolUse.sh      ← registered as PostToolUse hook
 ```
 
+## Security gates
+
+cleo refuses to install packages that trip any of the following gates. Failures are reported as errors and the package is skipped — no partial install, no lock entry written.
+
+| Gate | Trigger | Behaviour |
+|---|---|---|
+| Manifest schema | Package `cleo.json` exists but is malformed JSON, or has an unknown `type`, or `name` is not `<vendor>/<name>` with `[a-z0-9._-]` chars | Install aborts with `error: <pkg>: <reason>` |
+| Item name | A skill/rule/agent/command/hook has a name containing `/`, `\`, `..`, `.`, or a null byte | Install aborts before any file is copied |
+| Symlink escape | Any artifact source path resolves outside the package's cache directory (e.g. a symlinked skill dir pointing at `/etc/`) | Install aborts before any file is copied |
+| Hook size | Any hook script in `hooks/` exceeds 64 KiB | Install aborts before any hook is copied |
+
+These gates are non-configurable and run on every `cleo install` / `cleo require` / `cleo update`. They protect against malicious or malformed packages; they do not validate intent — a hook that fits in 64 KiB and a manifest that parses are NOT vouched for by cleo.
+
 ## Publishing
 
 1. Create a public (or private) git repository
