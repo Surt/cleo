@@ -204,3 +204,58 @@ class TestWriteManifest:
         write_manifest(tmp_path, {"name": "a/b"})
         text = (tmp_path / "cleo.json").read_text(encoding="utf-8")
         assert text.endswith("\n")
+
+
+from lib.publish import validate_publish
+
+
+def _write_manifest(pkg_dir: Path, data: dict) -> None:
+    (pkg_dir / "cleo.json").write_text(_json.dumps(data), encoding="utf-8")
+
+
+def _write_rule(pkg_dir: Path, name: str = "r", description: str = "x") -> None:
+    (pkg_dir / "rules").mkdir(exist_ok=True)
+    (pkg_dir / "rules" / f"{name}.md").write_text(
+        f"---\nname: {name}\ndescription: {description}\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+
+
+class TestValidatePublishSecurityGates:
+    def test_clean_package_no_errors(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_rule(tmp_path)
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert errors == []
+
+    def test_bad_manifest_name_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "BAD NAME", "type": "skills-pack"})
+        _write_rule(tmp_path)
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("vendor" in e.lower() or "name" in e.lower() for e in errors)
+
+    def test_unknown_type_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "rules-pack"})
+        _write_rule(tmp_path)
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("type" in e.lower() for e in errors)
+
+    def test_empty_package_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("artifact" in e.lower() for e in errors)
+
+    def test_oversized_hook_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "hooks").mkdir()
+        (tmp_path / "hooks" / "PreToolUse.sh").write_bytes(b"#" * (64 * 1024 + 1))
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("hook" in e.lower() and ("limit" in e.lower() or "exceeds" in e.lower()) for e in errors)
+
+    def test_bad_item_name_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / ".md").write_text(
+            "---\nname: x\ndescription: y\n---\nbody\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("item name" in e.lower() or "empty" in e.lower() for e in errors)

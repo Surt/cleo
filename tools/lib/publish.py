@@ -19,6 +19,16 @@ import re
 import subprocess
 from pathlib import Path
 
+from .checks import discover_items
+from .security import (
+    SecurityViolation,
+    validate_dest_item_name,
+    validate_hook_size,
+    validate_item_source,
+    validate_manifest_file_not_symlink,
+    validate_package_has_artifacts,
+    validate_package_manifest,
+)
 from .semver import parse_version
 
 _BUMP_LEVELS = ("patch", "minor", "major")
@@ -160,3 +170,58 @@ def write_manifest(pkg_dir: Path, data: dict) -> bool:
     tmp.write_text(new_text, encoding="utf-8")
     os.replace(tmp, path)
     return True
+
+
+def _gate(errors: list[str], fn, *args, **kwargs) -> None:
+    """Run a security gate and append its message to errors on failure."""
+    try:
+        fn(*args, **kwargs)
+    except SecurityViolation as exc:
+        errors.append(str(exc))
+
+
+def validate_publish(pkg_dir: Path, *, skip_dry_install: bool = False) -> list[str]:
+    """Run the security gates, frontmatter checks, and (unless skipped) a
+    dry install. Return a list of error strings; empty means pass.
+
+    skip_dry_install is for unit tests of the cheap gates — the dry install
+    is exercised by its own dedicated tests in Task 7.
+    """
+    errors: list[str] = []
+
+    cleo_json = pkg_dir / "cleo.json"
+    mcp_json = pkg_dir / "mcp.json"
+    _gate(errors, validate_manifest_file_not_symlink, cleo_json)
+    _gate(errors, validate_manifest_file_not_symlink, mcp_json)
+
+    manifest_data: dict | None = None
+    if cleo_json.exists() and not errors:
+        try:
+            manifest_data = json.loads(cleo_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            errors.append(f"cleo.json is not valid JSON: {exc}")
+
+    pkg_name = (manifest_data or {}).get("name", "<unknown>")
+    _gate(errors, validate_package_manifest, manifest_data, pkg_name)
+
+    items = discover_items(pkg_dir)
+    for type_, item_name, item_path in items:
+        # Reject names that are just extensions or start with dot
+        if not item_name or item_name.startswith("."):
+            errors.append(f"item name {item_name!r} is invalid (empty or starts with '.')")
+            continue
+        _gate(errors, validate_dest_item_name, item_name)
+        src = item_path.parent if type_ == "skill" else item_path
+        _gate(errors, validate_item_source, src, pkg_dir)
+        if type_ == "hook":
+            _gate(errors, validate_hook_size, item_path)
+
+    pkg_type = (manifest_data or {}).get("type", "skills-pack")
+    _gate(
+        errors, validate_package_has_artifacts,
+        items_count=len(items),
+        has_mcp_json=mcp_json.exists(),
+        pkg_type=pkg_type,
+    )
+
+    return errors
