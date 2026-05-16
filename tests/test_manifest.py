@@ -16,6 +16,7 @@ from cleo import (
     save_manifest,
     scaffold_manifest,
     _bucket_key,
+    LockPackage,
     MANIFEST_FILE,
     LOCK_FILE,
     BUCKET_PROJECT,
@@ -107,3 +108,45 @@ class TestBucketKey:
 
     def test_user(self):
         assert _bucket_key(BUCKET_USER) == "require-user"
+
+
+# ---- LockPackage.install_mode ----------------------------------------------
+
+class TestLockPackageInstallMode:
+    def test_serializes_install_mode_default(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+        )
+        d = pkg.to_dict()
+        assert d["install_mode"] == "copy"
+
+    def test_serializes_install_mode_symlink(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+            install_mode="symlink",
+        )
+        d = pkg.to_dict()
+        assert d["install_mode"] == "symlink"
+
+    def test_roundtrips_install_mode(self):
+        src = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+            install_mode="symlink",
+        )
+        restored = LockPackage.from_dict("foo/bar", src.to_dict())
+        assert restored.install_mode == "symlink"
+
+    def test_reads_legacy_lock_without_install_mode(self):
+        legacy = {
+            "type": "skills-pack",
+            "url": "https://github.com/foo/bar",
+            "version": "1.0.0",
+            "commit": "abc123",
+            "bucket": "project",
+            "items": [],
+        }
+        pkg = LockPackage.from_dict("foo/bar", legacy)
+        assert pkg.install_mode == "copy"

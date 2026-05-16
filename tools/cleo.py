@@ -281,6 +281,7 @@ class LockPackage:
     bucket: str
     items: list[LockItem] = field(default_factory=list)
     mcp_server_key: Optional[str] = None
+    install_mode: str = "copy"  # "copy" | "symlink"
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -289,6 +290,7 @@ class LockPackage:
             "version": self.version,
             "commit": self.commit,
             "bucket": self.bucket,
+            "install_mode": self.install_mode,
             "items": [{"type": i.type, "name": i.name, "path": i.path, "sha": i.sha} for i in self.items],
         }
         if self.mcp_server_key:
@@ -305,6 +307,7 @@ class LockPackage:
             commit=d.get("commit", ""),
             bucket=d.get("bucket", BUCKET_PROJECT),
             mcp_server_key=d.get("mcp_server_key"),
+            install_mode=d.get("install_mode", "copy"),
             items=[
                 LockItem(type=i["type"], name=i["name"], path=i["path"], sha=i.get("sha", ""))
                 for i in d.get("items", [])
