@@ -731,7 +731,13 @@ def install_package(
         for type_, item_name, item_path in items_found:
             if type_ == "hook":
                 continue  # handled separately
-            src = _source_for_item(type_, item_name, item_path, cache_dir)
+            try:
+                validate_dest_item_name(item_name)
+                src = _source_for_item(type_, item_name, item_path, cache_dir)
+                validate_item_source(src, cache_dir)
+            except SecurityViolation as exc:
+                err(f"{name}: {exc}")
+                return None
             dst = _dest_path(project, type_, name, item_name, bucket)
             _materialize(src, dst)
             sha = sha256_artifact(dst)

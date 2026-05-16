@@ -370,3 +370,44 @@ class TestManifestSecurityGate:
         # Package must NOT be added to manifest.
         manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
         assert "v/p" not in manifest.get("require", {})
+
+
+# ---- Security gate: symlink escape rejected ---------------------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestSymlinkEscapeGate:
+    def test_symlinked_skill_dir_pointing_outside_is_rejected(self, tmp_path):
+        # Build a "decoy" external directory whose contents would be smuggled in.
+        outside = tmp_path / "outside-target"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: evil\ndescription: external payload that must not be installed\n---\n\npayload\n",
+            encoding="utf-8",
+        )
+
+        pkg = tmp_path / "pkg"
+        (pkg / "skills").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # Symlink skills/evil -> ../outside-target.
+        (pkg / "skills" / "evil").symlink_to(outside, target_is_directory=True)
+
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        # Install must fail.
+        assert r.returncode != 0
+        # Project must not contain the smuggled skill.
+        assert not (proj / ".claude" / "skills" / "cleo-v-p-evil").exists()
