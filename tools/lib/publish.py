@@ -206,10 +206,6 @@ def validate_publish(pkg_dir: Path, *, skip_dry_install: bool = False) -> list[s
 
     items = discover_items(pkg_dir)
     for type_, item_name, item_path in items:
-        # Reject names that are just extensions or start with dot
-        if not item_name or item_name.startswith("."):
-            errors.append(f"item name {item_name!r} is invalid (empty or starts with '.')")
-            continue
         _gate(errors, validate_dest_item_name, item_name)
         src = item_path.parent if type_ == "skill" else item_path
         _gate(errors, validate_item_source, src, pkg_dir)

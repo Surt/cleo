@@ -255,7 +255,7 @@ class TestValidatePublishSecurityGates:
     def test_bad_item_name_reported(self, tmp_path):
         _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
         (tmp_path / "rules").mkdir()
-        (tmp_path / "rules" / ".md").write_text(
+        (tmp_path / "rules" / "...md").write_text(
             "---\nname: x\ndescription: y\n---\nbody\n", encoding="utf-8")
         errors = validate_publish(tmp_path, skip_dry_install=True)
-        assert any("item name" in e.lower() or "empty" in e.lower() for e in errors)
+        assert any("reserved" in e.lower() or "item name" in e.lower() for e in errors)
