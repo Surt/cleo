@@ -1,0 +1,77 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            output: cleo
+            artifact: cleo-linux
+          - os: windows-latest
+            output: cleo.exe
+            artifact: cleo-windows.exe
+          - os: macos-latest
+            output: cleo
+            artifact: cleo-macos
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install "nuitka[onefile]" pyyaml ordered-set
+
+      - name: Install C compiler (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y gcc patchelf
+
+      - name: Build with Nuitka
+        run: >
+          python -m nuitka
+          --onefile
+          --assume-yes-for-downloads
+          --output-filename=${{ matrix.output }}
+          --include-package=lib
+          --nofollow-import-to=tkinter
+          tools/cleo.py
+
+      - name: Rename artifact
+        shell: bash
+        run: mv ${{ matrix.output }} ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            cleo-linux/cleo-linux
+            cleo-windows.exe/cleo-windows.exe
+            cleo-macos/cleo-macos
+          generate_release_notes: true
