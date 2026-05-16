@@ -1274,3 +1274,57 @@ def test_full_migration_roundtrip(tmp_path, monkeypatch, capsys):
     assert rc == 0
     assert "preexisting" not in out3
     assert "untracked" not in out3
+
+
+# ---------------------------------------------------------------------------
+# Issue 1: cmd_update silently downgrades symlink installs to copy
+# ---------------------------------------------------------------------------
+
+def test_update_preserves_symlink_install_mode(tmp_path, monkeypatch):
+    """`cleo update` on a symlink-installed package keeps install_mode=symlink in lock."""
+    if sys.platform == "win32":
+        pytest.skip("symlink mode requires POSIX or Windows dev-mode")
+    import cleo as cleo_mod
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    # Seed a project with a symlinked package in lock.
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{"test/pkg":"^1.0.0"},'
+        '"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+    lock_data = {
+        "version": 1,
+        "generated": "x",
+        "packages": {
+            "test/pkg": {
+                "type": "skills-pack",
+                "url": "https://example/test/pkg",
+                "version": "1.0.0",
+                "commit": "a" * 40,
+                "bucket": "project",
+                "install_mode": "symlink",
+                "items": [],
+            }
+        },
+    }
+    (project / "cleo.lock").write_text(json.dumps(lock_data), encoding="utf-8")
+
+    # Mock fetch / version resolution so update doesn't hit network.
+    # New version 1.1.0 to trigger the install path (not "already current").
+    monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.1.0", "v1.1.0"))
+    monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "b" * 40)
+
+    # Pre-seed cache for 1.1.0 so install_package finds it without cloning.
+    cache = cleo_mod._pkg_cache_dir("test/pkg", "1.1.0")
+    cache.mkdir(parents=True, exist_ok=True)
+    (cache / "cleo.json").write_text(
+        '{"name":"test/pkg","type":"skills-pack","version":"1.1.0"}\n', encoding="utf-8"
+    )
+    sd = cache / "skills" / "x"
+    sd.mkdir(parents=True)
+    (sd / "SKILL.md").write_text("---\nname: x\ndescription: y\n---\n", encoding="utf-8")
+    monkeypatch.setattr(cleo_mod, "_clone_or_fetch",
+                        lambda url, cdir, tag, expected_commit=None: True)

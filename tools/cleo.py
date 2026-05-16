@@ -1430,8 +1430,10 @@ def cmd_update(args: argparse.Namespace) -> int:
                     info(f"already current {pkg_name} {new_version}")
                 continue
 
+        existing_install_mode = existing.install_mode if existing else "copy"
         result = install_package(
             project, pkg_name, url, constraint, bucket,
+            install_mode=existing_install_mode,
             dry_run=args.dry_run, offline=args.offline, quiet=args.quiet,
         )
         if result is None:
