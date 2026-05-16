@@ -190,3 +190,39 @@ class TestValidatePackageHasArtifacts:
     def test_mixed_with_nothing_rejected(self):
         with pytest.raises(SecurityViolation, match="neither artifacts nor mcp.json"):
             validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="mixed")
+
+
+from lib.security import validate_package_ref
+
+
+class TestValidatePackageRef:
+    def test_valid_ref(self):
+        validate_package_ref("vendor/pkg")
+        validate_package_ref("v/p")
+        validate_package_ref("my-vendor/my.pkg_name")
+
+    def test_rejects_empty(self):
+        with pytest.raises(SecurityViolation, match="empty"):
+            validate_package_ref("")
+
+    def test_rejects_no_slash(self):
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("novendor")
+
+    def test_rejects_path_traversal(self):
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("../../etc/passwd")
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("v/../../tmp/evil")
+
+    def test_rejects_leading_dash(self):
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("-evil/p")
+
+    def test_rejects_uppercase(self):
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("Vendor/Pkg")
+
+    def test_rejects_extra_slash(self):
+        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
+            validate_package_ref("v/p/extra")

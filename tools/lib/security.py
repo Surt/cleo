@@ -115,3 +115,22 @@ def validate_package_has_artifacts(
         raise SecurityViolation(
             "package declares type 'mixed' but ships neither artifacts nor mcp.json"
         )
+
+
+def validate_package_ref(ref: str) -> None:
+    """Validate a package reference (`<vendor>/<name>`) before it touches paths.
+
+    Catches CLI-supplied and project-manifest-supplied package names that
+    would escape the cache directory via `..` segments, or pass a value
+    starting with `-` into a later git subprocess.
+
+    Uses the same regex as validate_package_manifest's `name` field check —
+    references and manifest names share the same shape.
+    """
+    if not ref:
+        raise SecurityViolation("package reference is empty")
+    if not _PKG_NAME_RE.match(ref):
+        raise SecurityViolation(
+            f"package reference {ref!r} must match <vendor>/<name> "
+            f"with [a-z0-9._-] chars only"
+        )
