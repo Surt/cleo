@@ -1268,6 +1268,34 @@ def cmd_publish(args: argparse.Namespace) -> int:
         elif not args.quiet:
             info("cleo.json already committed — nothing to do")
 
+    if args.tag:
+        version_for_tag = merged.get("version", "0.0.0")
+        tag = f"v{version_for_tag}"
+        try:
+            if publish_mod.tag_exists(pkg_dir, tag):
+                if publish_mod.tag_at_head(pkg_dir, tag):
+                    if not args.quiet:
+                        info(f"tag {tag} already at HEAD — skipping")
+                elif args.yes:
+                    subprocess.run(
+                        ["git", "-C", str(pkg_dir), "tag", "-d", "--", tag],
+                        check=True, capture_output=True,
+                    )
+                    publish_mod.create_tag(pkg_dir, tag)
+                    if not args.quiet:
+                        ok(f"moved tag {tag} to HEAD")
+                else:
+                    err(f"tag {tag} already exists at a different commit "
+                        f"(rerun with --yes to move it)")
+                    return 1
+            else:
+                publish_mod.create_tag(pkg_dir, tag)
+                if not args.quiet:
+                    ok(f"created tag {tag}")
+        except (RuntimeError, SecurityViolation) as exc:
+            err(str(exc))
+            return 1
+
     if not args.quiet:
         ok(f"{merged['name']} {merged.get('version', '?')} [{merged.get('type')}] — validation passed")
     return 0
@@ -1342,6 +1370,10 @@ def main(argv: list[str]) -> int:
                    help="Bump version in cleo.json before validating")
     s.add_argument("--commit", action="store_true",
                    help="git add cleo.json and commit it")
+    s.add_argument("--tag", action="store_true",
+                   help="git tag vX.Y.Z on HEAD after committing")
+    s.add_argument("--yes", action="store_true",
+                   help="skip confirms; allow tag overwrite")
     s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)

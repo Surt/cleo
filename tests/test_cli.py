@@ -749,3 +749,59 @@ class TestPublishCommit:
         r2 = run_cleo("publish", "--commit", "--package", str(pkg))
         assert r2.returncode == 0, r2.stderr
         assert _git_log_subjects(pkg) == before
+
+
+class TestPublishTag:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_tag_creates_new_tag(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "v0.1.1" in tags
+
+    def test_tag_idempotent_when_pointing_at_head(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r1 = run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        assert r1.returncode == 0
+        r2 = run_cleo("publish", "--commit", "--tag", "--package", str(pkg))
+        assert r2.returncode == 0, r2.stderr
+
+    def test_tag_refuses_when_pointing_elsewhere(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: updated body for tag-elsewhere test\n---\nbody2\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "drift")
+        r = run_cleo("publish", "--tag", "--package", str(pkg))
+        assert r.returncode != 0
+        assert "tag" in (r.stdout + r.stderr).lower()
+
+    def test_tag_moves_with_yes(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: updated body for tag-move test\n---\nbody2\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "drift")
+        new_head = subprocess.run(
+            ["git", "-C", str(pkg), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        r = run_cleo("publish", "--tag", "--yes", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        tag_sha = subprocess.run(
+            ["git", "-C", str(pkg), "rev-parse", "v0.1.1^{commit}"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert tag_sha == new_head
