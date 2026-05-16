@@ -89,3 +89,62 @@ def test_scan_handles_missing_directory(tmp_path):
     nonexistent = tmp_path / "does-not-exist"
     discoveries = scan_untracked(nonexistent, tracked_paths=set())
     assert discoveries == []
+
+
+from lib.adopt import enrich_provenance, _extract_origin_url
+
+
+def test_extract_origin_url_simple():
+    config = '''
+[core]
+    bare = false
+[remote "origin"]
+    url = https://github.com/vendor/repo.git
+    fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+    remote = origin
+'''
+    assert _extract_origin_url(config) == "https://github.com/vendor/repo.git"
+
+
+def test_extract_origin_url_returns_none_when_no_origin():
+    config = '[core]\n    bare = false\n'
+    assert _extract_origin_url(config) is None
+
+
+def test_extract_origin_url_handles_ssh_url():
+    config = '''
+[remote "origin"]
+    url = git@github.com:vendor/repo.git
+'''
+    assert _extract_origin_url(config) == "git@github.com:vendor/repo.git"
+
+
+def test_enrich_populates_git_remote_for_symlink_into_repo(tmp_path):
+    from lib.adopt import Discovery
+
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    git = repo / ".git"
+    git.mkdir()
+    (git / "config").write_text(
+        '[remote "origin"]\n    url = https://github.com/x/y.git\n',
+        encoding="utf-8",
+    )
+    skill_src = repo / "skills" / "my-skill"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text("---\nname: my-skill\n---\n", encoding="utf-8")
+
+    d = Discovery(
+        skill_name="my-skill", path=tmp_path / "linked", is_symlink=True,
+        symlink_target=skill_src,
+    )
+    enriched = enrich_provenance(d)
+    assert enriched.git_remote == "https://github.com/x/y.git"
+
+
+def test_enrich_returns_unchanged_for_non_symlink(tmp_path):
+    from lib.adopt import Discovery
+    d = Discovery(skill_name="plain", path=tmp_path / "plain", is_symlink=False)
+    out = enrich_provenance(d)
+    assert out.git_remote is None
