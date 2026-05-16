@@ -1284,10 +1284,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
                     if not args.quiet:
                         info(f"tag {tag} already at HEAD — skipping")
                 elif args.yes:
-                    subprocess.run(
-                        ["git", "-C", str(pkg_dir), "tag", "-d", "--", tag],
-                        check=True, capture_output=True,
-                    )
+                    publish_mod.delete_tag(pkg_dir, tag)
                     publish_mod.create_tag(pkg_dir, tag)
                     if not args.quiet:
                         ok(f"moved tag {tag} to HEAD")
@@ -1306,7 +1303,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
     if args.push:
         version_for_tag = merged.get("version", "0.0.0")
         tag = f"v{version_for_tag}"
-        branch = publish_mod._git_capture(pkg_dir, "symbolic-ref", "--short", "HEAD")
+        branch = publish_mod.current_branch(pkg_dir)
         if not branch:
             err("HEAD is detached — cannot push a branch ref")
             return 1

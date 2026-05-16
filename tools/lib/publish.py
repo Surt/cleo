@@ -325,6 +325,22 @@ def _dry_install(pkg_dir: Path) -> list[str]:
     return errors
 
 
+def delete_tag(pkg_dir: Path, tag: str) -> None:
+    """Delete a local tag. Raise RuntimeError on git failure."""
+    validate_git_ref(tag)
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "tag", "-d", "--", tag],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"git tag -d failed: {r.stderr.strip()}")
+
+
+def current_branch(pkg_dir: Path) -> str | None:
+    """Return the current branch name, or None when HEAD is detached."""
+    return _git_capture(pkg_dir, "symbolic-ref", "--short", "HEAD")
+
+
 def tag_exists(pkg_dir: Path, tag: str) -> bool:
     validate_git_ref(tag)
     out = _git_capture(pkg_dir, "tag", "--list", tag)

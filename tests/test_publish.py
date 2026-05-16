@@ -206,7 +206,7 @@ class TestWriteManifest:
         assert text.endswith("\n")
 
 
-from lib.publish import commit_file, working_tree_dirty, validate_publish, create_tag, push
+from lib.publish import commit_file, working_tree_dirty, validate_publish, create_tag, push, current_branch, delete_tag
 
 
 def _git_log_subject(pkg_dir: Path) -> list[str]:
@@ -495,3 +495,45 @@ class TestGitopsTagAndPush:
             capture_output=True, text=True, check=True,
         )
         assert "v1.0.0" in r.stdout
+
+
+class TestGitopsExtraHelpers:
+    def test_delete_tag_removes_existing(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        _git(tmp_path, "tag", "v1.0.0")
+        delete_tag(tmp_path, "v1.0.0")
+        assert tag_exists(tmp_path, "v1.0.0") is False
+
+    def test_delete_tag_raises_when_missing(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        with pytest.raises(RuntimeError):
+            delete_tag(tmp_path, "v1.0.0")
+
+    def test_current_branch(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        assert current_branch(tmp_path) == "main"
+
+    def test_current_branch_detached(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "x").write_text("y", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "x")
+        # Detach HEAD by checking out the commit SHA directly.
+        sha = subprocess.run(
+            ["git", "-C", str(tmp_path), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "checkout", "-q", sha],
+            check=True, capture_output=True,
+        )
+        assert current_branch(tmp_path) is None
