@@ -7,7 +7,17 @@
       "Bash(git clone*)",
       "Bash(git fetch*)",
       "Bash(git -C * checkout*)",
-      "Bash(git -C * pull*)"
+      "Bash(git -C * pull*)",
+      "Bash(git -C * tag*)",
+      "Bash(git -C * push*)",
+      "Bash(git -C * rev-parse*)",
+      "Bash(git -C * remote*)",
+      "Bash(git -C * status*)",
+      "Bash(git -C * diff*)",
+      "Bash(git -C * add*)",
+      "Bash(git -C * commit*)",
+      "Bash(git -C * log*)",
+      "Bash(git -C * symbolic-ref*)"
     ]
   }
 }
