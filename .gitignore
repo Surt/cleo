@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+.venv/
+venv/
+*.spec
+
+# cleo dogfooding / dirty cwd artifacts — repo root is not a cleo project
+/.claude/
+/cleo.json
+/cleo.lock
+
+# Working artifacts — kept local, never committed
+docs/plans/
+docs/specs/

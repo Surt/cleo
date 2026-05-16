@@ -1,0 +1,11 @@
+{
+  "name": "cleo",
+  "description": "npm for MCP servers + Claude skills — install/require/update/list commands",
+  "version": "0.1.0",
+  "author": {
+    "name": "Erik Wiesenthal"
+  },
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://github.com/Surt/cleo",
+  "repository": "https://github.com/Surt/cleo"
+}
