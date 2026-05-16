@@ -236,6 +236,57 @@ def manifest_add_package(project: Path, name: str, constraint: str, bucket: str,
     save_manifest(project, data)
 
 
+def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
+    """Register one discovered skill dir into cleo.json + cleo.lock.
+
+    Strategy:
+    - If d.git_remote is set, register as a regular git-sourced package
+      with constraint "*"; commit is left empty (next `cleo update` resolves).
+    - Otherwise register as a `file://` source against the discovery's path
+      (or its symlink target if it's a symlink).
+    """
+    # Synthesize a package name from the skill dir name.
+    # validate_package_ref requires [a-z0-9._-]; lowercase + char-filter
+    # to satisfy that gate. Falls back to a generic name if nothing survives.
+    safe = d.skill_name.replace("/", "-").replace(" ", "-").lower()
+    safe = "".join(c for c in safe if c.isalnum() or c in "._-")
+    if not safe:
+        safe = "skill"
+    pkg_name = f"adopted/{safe}"
+
+    src_path = d.symlink_target if d.is_symlink and d.symlink_target else d.path
+
+    if d.git_remote:
+        url = d.git_remote
+        constraint = "*"
+        lock_pkg = LockPackage(
+            name=pkg_name, pkg_type="skills-pack", url=url,
+            version="0.0.0+adopted", commit="",
+            bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+            items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+        )
+    else:
+        url = f"file://{src_path}"
+        constraint = "*"
+        lock_pkg = LockPackage(
+            name=pkg_name, pkg_type="skills-pack", url=url,
+            version="0.0.0+local", commit="0" * 40,
+            bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+            items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+        )
+
+    if not quiet:
+        ok(f"adopt {pkg_name} (from {url}){' (dry-run)' if dry_run else ''}")
+
+    if dry_run:
+        return
+
+    manifest_add_package(project, pkg_name, constraint, BUCKET_USER, url)
+    lock = load_lock(project)
+    lock[pkg_name] = lock_pkg
+    save_lock(project, lock)
+
+
 GITHUB_BASE = "https://github.com"
 
 
@@ -1311,13 +1362,19 @@ def cmd_update(args: argparse.Namespace) -> int:
     for sd in scan_dirs:
         discoveries.extend(scan_untracked(sd, tracked_paths))
 
-    if discoveries and not getattr(args, "adopt", False):
-        names = ", ".join(d.skill_name for d in discoveries)
-        info(
-            f"note: {len(discoveries)} untracked skill director"
-            f"{'y' if len(discoveries) == 1 else 'ies'} found ({names})"
-        )
-        info("      re-run with --adopt to register them.")
+    if discoveries:
+        if not getattr(args, "adopt", False):
+            names = ", ".join(d.skill_name for d in discoveries)
+            info(
+                f"note: {len(discoveries)} untracked skill director"
+                f"{'y' if len(discoveries) == 1 else 'ies'} found ({names})"
+            )
+            info("      re-run with --adopt to register them.")
+        else:
+            from lib.adopt import enrich_provenance
+            for d in discoveries:
+                enriched = enrich_provenance(d)
+                _adopt_one(project, enriched, dry_run=args.dry_run, quiet=args.quiet)
 
     # ---- Existing update loop continues here ----
     if not lock:

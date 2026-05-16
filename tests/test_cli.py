@@ -1124,3 +1124,70 @@ def test_update_reports_untracked_without_adopting(tmp_path, monkeypatch, capsys
     assert manifest.get("require") == {}
     lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
     assert lock["packages"] == {}
+
+
+def test_update_with_adopt_registers_untracked_skills(tmp_path, monkeypatch):
+    """`cleo update --adopt` writes the discoveries into cleo.json + cleo.lock."""
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.0.0", "v1.0.0"))
+    monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "a" * 40)
+
+    user_home = tmp_path / "home"
+    global_skills = user_home / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    sk = global_skills / "external-skill"
+    sk.mkdir()
+    (sk / "SKILL.md").write_text(
+        "---\nname: external-skill\ndescription: hello\n---\n", encoding="utf-8"
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global", "--adopt", "--quiet",
+    ])
+    assert rc == 0
+
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    user_req = manifest.get("require-user", {})
+    assert any(k.endswith("external-skill") for k in user_req)
+
+    lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
+    assert any(
+        pkg.get("url", "").startswith("file://") for pkg in lock["packages"].values()
+    )
+
+
+def test_update_with_adopt_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
+    """`cleo update --adopt --dry-run` prints the diff but does not modify files."""
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    user_home = tmp_path / "home"
+    global_skills = user_home / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    sk = global_skills / "dry-skill"
+    sk.mkdir()
+    (sk / "SKILL.md").write_text("---\nname: dry-skill\n---\n", encoding="utf-8")
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global", "--adopt", "--dry-run",
+    ])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "dry-skill" in out
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    assert manifest["require-user"] == {}  # unchanged
