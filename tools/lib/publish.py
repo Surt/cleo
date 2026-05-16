@@ -19,7 +19,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from .checks import discover_items
+from .checks import discover_items, parse_frontmatter
 from .security import (
     SecurityViolation,
     validate_dest_item_name,
@@ -211,6 +211,22 @@ def validate_publish(pkg_dir: Path, *, skip_dry_install: bool = False) -> list[s
         _gate(errors, validate_item_source, src, pkg_dir)
         if type_ == "hook":
             _gate(errors, validate_hook_size, item_path)
+
+    for type_, item_name, item_path in items:
+        if type_ == "hook":
+            continue
+        try:
+            data, err = parse_frontmatter(item_path)
+        except OSError as exc:
+            errors.append(f"{item_path.name}: cannot read ({exc})")
+            continue
+        if data is None:
+            errors.append(f"{item_path.name}: frontmatter error: {err}")
+            continue
+        for required in ("name", "description"):
+            val = data.get(required)
+            if not isinstance(val, str) or not val.strip():
+                errors.append(f"{item_path.name}: missing or empty frontmatter field {required!r}")
 
     pkg_type = (manifest_data or {}).get("type", "skills-pack")
     _gate(

@@ -259,3 +259,52 @@ class TestValidatePublishSecurityGates:
             "---\nname: x\ndescription: y\n---\nbody\n", encoding="utf-8")
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert any("reserved" in e.lower() or "item name" in e.lower() for e in errors)
+
+
+class TestValidatePublishFrontmatter:
+    def test_missing_name_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / "r.md").write_text(
+            "---\ndescription: only desc\n---\nbody\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("name" in e.lower() and "r.md" in e for e in errors)
+
+    def test_missing_description_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / "r.md").write_text(
+            "---\nname: r\n---\nbody\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("description" in e.lower() and "r.md" in e for e in errors)
+
+    def test_unparseable_yaml_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / "r.md").write_text(
+            "---\nname: [unclosed\n---\nbody\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("yaml" in e.lower() or "frontmatter" in e.lower() for e in errors)
+
+    def test_missing_frontmatter_block_reported(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / "r.md").write_text("plain body, no frontmatter\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("frontmatter" in e.lower() for e in errors)
+
+    def test_skill_frontmatter_checked(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "skills" / "s").mkdir(parents=True)
+        (tmp_path / "skills" / "s" / "SKILL.md").write_text(
+            "---\nname: s\n---\nbody\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert any("description" in e.lower() and "SKILL.md" in e for e in errors)
+
+    def test_hooks_skipped_no_frontmatter_required(self, tmp_path):
+        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        (tmp_path / "hooks").mkdir()
+        (tmp_path / "hooks" / "PreToolUse.sh").write_text(
+            "#!/bin/sh\necho hi\n", encoding="utf-8")
+        errors = validate_publish(tmp_path, skip_dry_install=True)
+        assert errors == []
