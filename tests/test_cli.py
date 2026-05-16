@@ -14,6 +14,10 @@ from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+
+from cleo import _materialize_symlink
+
 CLEO = str(Path(__file__).resolve().parent.parent / "tools" / "cleo.py")
 
 
@@ -636,3 +640,35 @@ class TestSymlinkedManifestGate:
         assert r.returncode != 0
         manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
         assert "v/p" not in manifest.get("require", {})
+
+
+# ---- _materialize_symlink unit tests ----------------------------------------
+
+class TestMaterializeSymlink:
+    def test_materialize_symlink_creates_symlink_for_dir(self, tmp_path):
+        src = tmp_path / "src_skill"
+        src.mkdir()
+        (src / "SKILL.md").write_text("---\nname: foo\n---\nbody\n", encoding="utf-8")
+        dst = tmp_path / "dst" / "cleo-foo-bar"
+        try:
+            _materialize_symlink(src, dst)
+        except OSError:
+            pytest.skip("symlink not permitted on this platform")
+        assert dst.is_symlink()
+        assert dst.resolve() == src.resolve()
+        assert (dst / "SKILL.md").read_text(encoding="utf-8").startswith("---")
+
+    def test_materialize_symlink_replaces_existing_dst(self, tmp_path):
+        src = tmp_path / "src_skill"
+        src.mkdir()
+        (src / "SKILL.md").write_text("---\nname: foo\n---\n", encoding="utf-8")
+        dst = tmp_path / "dst" / "cleo-foo-bar"
+        dst.parent.mkdir(parents=True)
+        dst.mkdir()
+        (dst / "stale.md").write_text("old", encoding="utf-8")
+        try:
+            _materialize_symlink(src, dst)
+        except OSError:
+            pytest.skip("symlink not permitted on this platform")
+        assert dst.is_symlink()
+        assert not (dst / "stale.md").exists()

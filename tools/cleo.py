@@ -681,6 +681,21 @@ def _materialize(src: Path, dst: Path) -> None:
         os.replace(tmp, dst)
 
 
+def _materialize_symlink(src: Path, dst: Path) -> None:
+    """Symlink dst → src. Replaces existing dst (dir, file, or symlink).
+
+    Raises OSError if the OS rejects symlink creation (Windows without
+    developer mode / admin). Callers are responsible for fallback.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists() or dst.is_symlink():
+        if dst.is_dir() and not dst.is_symlink():
+            shutil.rmtree(dst)
+        else:
+            dst.unlink()
+    os.symlink(src.resolve(), dst, target_is_directory=src.is_dir())
+
+
 # ---- Install a single package -------------------------------------------
 
 
