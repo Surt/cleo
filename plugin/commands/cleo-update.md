@@ -63,6 +63,14 @@ Already current:
   acme/cleo-mcp-example  2.2.0
 ```
 
+## Adoption
+
+`cleo update` also scans `~/.claude/skills/` and `./.claude/skills/` for SKILL.md directories not yet tracked in `cleo.lock` and prints a one-line note when it finds any. Pass `--adopt` to register them.
+
+- `--adopt` — register any untracked skill directories found during the scan
+- `--scope project|global|both` — limit the scan to project skills, user-global skills, or both (default: `both`)
+- `--adopt --dry-run` — preview the `cleo.json` / `cleo.lock` diff without writing
+
 ## Examples
 
 ```
@@ -70,4 +78,7 @@ Already current:
 /cleo-update acme/cleo-example
 /cleo-update --dry-run
 /cleo-update acme/cleo-example acme/cleo-generic
+/cleo-update --adopt
+/cleo-update --adopt --scope project
+/cleo-update --adopt --dry-run
 ```
