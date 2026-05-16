@@ -56,6 +56,7 @@ from lib.security import (  # noqa: E402
     validate_package_ref,
     HOOK_SIZE_MAX_BYTES,
 )
+from lib import publish as publish_mod  # noqa: E402
 
 LOCK_VERSION = 1
 MANIFEST_FILE = "cleo.json"
@@ -1210,6 +1211,43 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_publish(args: argparse.Namespace) -> int:
+    pkg_dir = args.package.resolve()
+    if not pkg_dir.is_dir():
+        err(f"--package {pkg_dir} is not a directory")
+        return 1
+
+    cleo_json = pkg_dir / "cleo.json"
+    existing: dict | None = None
+    if cleo_json.exists():
+        try:
+            existing = json.loads(cleo_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            err(f"existing cleo.json is not valid JSON: {exc}")
+            return 1
+
+    detected = publish_mod.detect_package(pkg_dir)
+    merged = publish_mod.merge_manifest(existing, detected)
+    if "name" not in merged:
+        err("cannot detect package name — set `name` in cleo.json or "
+            "configure an origin remote matching <vendor>/<name>")
+        return 1
+
+    changed = publish_mod.write_manifest(pkg_dir, merged)
+    if changed and not args.quiet:
+        info(f"refreshed {pkg_dir / 'cleo.json'}")
+
+    errors = publish_mod.validate_publish(pkg_dir)
+    if errors:
+        for e in errors:
+            err(e)
+        return 1
+
+    if not args.quiet:
+        ok(f"{merged['name']} {merged.get('version', '?')} [{merged.get('type')}] — validation passed")
+    return 0
+
+
 # ---- CLI ----------------------------------------------------------------
 
 
@@ -1270,6 +1308,12 @@ def main(argv: list[str]) -> int:
 
     s = sub.add_parser("init", help="Scaffold a starter cleo.json", parents=[common_sub])
     s.set_defaults(fn=cmd_init)
+
+    s = sub.add_parser("publish", help="Refresh package cleo.json, validate, and optionally release",
+                       parents=[common_sub])
+    s.add_argument("--package", type=Path, default=Path.cwd(),
+                   help="Path to the package repo (default: cwd)")
+    s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)
     # Propagate --quiet to subcommands that don't declare it explicitly

@@ -636,3 +636,60 @@ class TestSymlinkedManifestGate:
         assert r.returncode != 0
         manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
         assert "v/p" not in manifest.get("require", {})
+
+
+# ---- cleo publish: bare invocation ----------------------------------------
+
+class TestPublishBare:
+    def _make_publishable_pkg(self, pkg_dir: Path) -> None:
+        pkg_dir.mkdir(exist_ok=True)
+        (pkg_dir / "rules").mkdir()
+        (pkg_dir / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for publish bare test\n---\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg_dir, "init", "-q", "-b", "main")
+        _git(pkg_dir, "config", "user.email", "t@t.t")
+        _git(pkg_dir, "config", "user.name", "t")
+        _git(pkg_dir, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+        _git(pkg_dir, "add", "-A")
+        _git(pkg_dir, "commit", "-qm", "init")
+        _git(pkg_dir, "tag", "v0.1.0")
+
+    def test_bare_writes_manifest_and_validates(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        self._make_publishable_pkg(pkg)
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        data = json.loads((pkg / "cleo.json").read_text(encoding="utf-8"))
+        assert data["name"] == "acme/widgets"
+        assert data["type"] == "skills-pack"
+        assert data["version"] == "0.1.0"
+
+    def test_bare_preserves_existing_description(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        self._make_publishable_pkg(pkg)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "acme/widgets", "type": "skills-pack",
+                        "version": "0.1.0", "description": "hand-written"}),
+            encoding="utf-8",
+        )
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        data = json.loads((pkg / "cleo.json").read_text(encoding="utf-8"))
+        assert data["description"] == "hand-written"
+
+    def test_bare_fails_on_validation_error(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+        (pkg / "README.md").write_text("nothing here", encoding="utf-8")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "init")
+        _git(pkg, "tag", "v0.1.0")
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode != 0
+        assert "artifact" in (r.stdout + r.stderr).lower()
