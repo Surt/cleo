@@ -871,3 +871,38 @@ class TestRequireSources:
                              "https://github.com/test/foo", "--quiet"])
         assert rc == 0
         assert captured["url"] == "https://github.com/test/foo"
+
+
+def test_require_subdir_form_installs_only_subdir(tmp_path, monkeypatch):
+    """`cleo require https://github.com/owner/repo/tree/main/skills/foo` installs only that subdir."""
+    import cleo as cleo_mod
+
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.0.0", "v1.0.0"))
+    monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "a" * 40)
+
+    def fake_clone_subdir(url, cdir, tag, subpath, expected_commit=None):
+        # Simulate a sparse-checkout result: only the named subdir exists.
+        cdir.mkdir(parents=True, exist_ok=True)
+        skill_dir = cdir / "skills" / "foo"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: foo\ndescription: y\n---\n", encoding="utf-8"
+        )
+        # cleo.json synthesized at cache root by the implementation.
+        (cdir / "cleo.json").write_text(
+            '{"name":"owner/foo","type":"skills-pack","version":"1.0.0"}\n',
+            encoding="utf-8",
+        )
+        return True
+    monkeypatch.setattr(cleo_mod, "_clone_or_fetch_subdir", fake_clone_subdir, raising=False)
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    rc = cleo_mod.main([
+        "--project", str(project), "require",
+        "https://github.com/owner/repo/tree/main/skills/foo", "--quiet",
+    ])
+    assert rc == 0
+    skills_dir = project / ".claude" / "skills"
+    assert (skills_dir / "cleo-owner-foo-foo").exists()

@@ -428,6 +428,93 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
         return False
 
 
+def _clone_or_fetch_subdir(
+    url: str,
+    cache_dir: Path,
+    ref: str,
+    subpath: str,
+    *,
+    expected_commit: Optional[str] = None,
+) -> bool:
+    """Clone only `subpath` from `url` at `ref` into `cache_dir`.
+
+    Uses `git sparse-checkout` to materialize a single directory. After clone,
+    the named subpath's contents are promoted to cache_dir root (so the rest
+    of cleo treats it like a normal single-skill package).
+
+    Synthesizes a minimal `cleo.json` if absent so manifest validation passes.
+    """
+    try:
+        validate_git_ref(url)
+        validate_git_ref(ref)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return False
+    # Block path traversal in subpath.
+    if ".." in subpath.split("/") or subpath.startswith("/"):
+        err(f"invalid subpath: {subpath!r}")
+        return False
+
+    if cache_dir.exists():
+        _rmtree_force(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        r1 = subprocess.run(
+            ["git", "clone", "--depth=1", "--branch", ref, "--no-checkout",
+             "--filter=blob:none", "--", url, str(cache_dir)],
+            capture_output=True, text=True,
+        )
+        if r1.returncode != 0:
+            return False
+        r2 = subprocess.run(
+            ["git", "-C", str(cache_dir), "sparse-checkout", "set", "--no-cone", "--", subpath],
+            capture_output=True, text=True,
+        )
+        if r2.returncode != 0:
+            return False
+        r3 = subprocess.run(
+            ["git", "-C", str(cache_dir), "checkout"],
+            capture_output=True, text=True,
+        )
+        if r3.returncode != 0:
+            return False
+    except (FileNotFoundError, OSError):
+        return False
+
+    # Promote subpath contents to cache_dir root.
+    src_dir = cache_dir / subpath
+    if not src_dir.exists():
+        err(f"subpath {subpath!r} not found in repo")
+        return False
+    for child in src_dir.iterdir():
+        target = cache_dir / child.name
+        if target.exists():
+            continue  # collision (unlikely) — skip rather than overwrite
+        shutil.move(str(child), str(target))
+    # Remove the now-empty subpath tree.
+    parts = Path(subpath).parts
+    if parts:
+        top = cache_dir / parts[0]
+        if top.exists():
+            shutil.rmtree(top, ignore_errors=True)
+
+    # Synthesize cleo.json if absent.
+    cleo_json = cache_dir / "cleo.json"
+    if not cleo_json.exists():
+        owner_repo = url.rstrip("/").removesuffix(".git").rsplit("/", 2)[-2:]
+        synth_name = "/".join(owner_repo) if len(owner_repo) == 2 else "subdir/pkg"
+        cleo_json.write_text(
+            json.dumps({
+                "name": synth_name,
+                "type": "skills-pack",
+                "description": f"Subdir install: {subpath}",
+            }, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return True
+
+
 def _read_package_manifest(cache_dir: Path) -> dict | None:
     """Read the package's own cleo.json. Returns None if absent.
 
@@ -978,8 +1065,47 @@ def cmd_require(args: argparse.Namespace) -> int:
         return 1
 
     if src.kind == SourceKind.GIT_SUBDIR:
-        err("subdir source form not yet implemented (task B3)")
-        return 1
+        pkg_ref = src.name
+        try:
+            validate_package_ref(pkg_ref)
+            validate_git_ref(src.url)
+        except SecurityViolation as exc:
+            err(str(exc))
+            return 1
+
+        bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
+        if manifest is None:
+            scaffold_manifest(project)
+            manifest = load_manifest(project)
+
+        ref = src.ref or "main"
+        version = "0.0.0+subdir"
+        commit = resolve_commit(src.url, ref) or ""
+
+        cache_dir = _pkg_cache_dir(pkg_ref, version)
+        if not args.dry_run:
+            if not _clone_or_fetch_subdir(src.url, cache_dir, ref, src.subpath,
+                                           expected_commit=commit or None):
+                err(f"{pkg_ref}: failed to fetch subdir from {src.url}")
+                return 1
+
+        install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+        result = install_package(
+            project, pkg_ref, src.url, constraint, bucket,
+            locked_version=version, locked_commit=commit or "0" * 40,
+            install_mode=install_mode,
+            dry_run=args.dry_run, quiet=args.quiet,
+        )
+        if result is None:
+            return 1
+        manifest_add_package(project, pkg_ref, constraint, bucket, src.url)
+        lock = load_lock(project)
+        lock[pkg_ref] = result
+        if not args.dry_run:
+            save_lock(project, lock)
+        if not args.quiet:
+            ok(f"Added {pkg_ref} (subdir: {src.subpath})")
+        return 0
 
     if src.kind == SourceKind.LOCAL_PATH:
         err("local path source form not yet implemented (task B4)")
