@@ -155,6 +155,10 @@ cleo refuses to install packages that trip any of the following gates. Failures 
 | Symlink escape | Any artifact source path resolves outside the package's cache directory (e.g. a symlinked skill dir pointing at `/etc/`) | Install aborts before any file is copied |
 | Hook size | Any hook script in `hooks/` exceeds 64 KiB | Install aborts before any hook is copied |
 | Empty package | Package contributes no items AND no `mcp.json`, given its declared `type` | Install aborts with a hint that this may be the wrong repo |
+| Package ref shape | A package name (CLI arg or project manifest key) is not `<vendor>/<name>` with `[a-z0-9._-]` chars only | Install aborts before any path is constructed; protects against cache-dir escape via `..` segments |
+| Git ref shape | A tag or URL starts with `-`, or contains a null byte / newline | The git subprocess is not invoked; protects against argument injection |
+| Symlinked manifest | `cleo.json` or `mcp.json` in the package is a symlink | Install aborts before any file is read |
+| Artifact file type | An artifact source path is a FIFO, socket, device file, or any non-regular non-directory file | Install aborts before materialization (prevents `shutil.copy2` blocking or misbehaving) |
 
 These gates are non-configurable and run on every `cleo install` / `cleo require` / `cleo update`. They protect against malicious or malformed packages; they do not validate intent — a hook that fits in 64 KiB and a manifest that parses are NOT vouched for by cleo.
 
