@@ -285,3 +285,29 @@ class TestValidateManifestFileNotSymlink:
         link.symlink_to(target)
         with pytest.raises(SecurityViolation, match="symlink"):
             validate_manifest_file_not_symlink(link)
+
+
+class TestValidateItemSourceFileType:
+    def test_regular_file_still_ok(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        item = cache / "f.md"
+        item.write_text("body")
+        validate_item_source(item, cache)
+
+    def test_directory_still_ok(self, tmp_path):
+        cache = tmp_path / "cache"
+        sub = cache / "sub"
+        sub.mkdir(parents=True)
+        validate_item_source(sub, cache)
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                         reason="FIFO not supported on Windows")
+    def test_fifo_rejected(self, tmp_path):
+        import os as _os
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        fifo = cache / "f.md"
+        _os.mkfifo(fifo)
+        with pytest.raises(SecurityViolation, match="not a regular file"):
+            validate_item_source(fifo, cache)

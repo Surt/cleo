@@ -61,11 +61,13 @@ def validate_dest_item_name(name: str) -> None:
 
 
 def validate_item_source(src: Path, cache_root: Path) -> None:
-    """Refuse to materialize items whose real path escapes the cache root.
+    """Refuse to materialize items whose real path escapes the cache root
+    or whose file type is anything other than regular file / directory.
 
     Symlinks pointing outside the package are the main attack vector here —
     shutil.copytree/copy2 follow them silently. Resolve both paths and
-    require containment.
+    require containment. Then reject FIFOs / device files / sockets /
+    block devices, which would cause shutil to block or fail confusingly.
     """
     try:
         real_src = src.resolve(strict=True)
@@ -80,6 +82,11 @@ def validate_item_source(src: Path, cache_root: Path) -> None:
         raise SecurityViolation(
             f"source {src} resolves outside the package cache ({real_src})"
         ) from None
+    mode = real_src.stat().st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        raise SecurityViolation(
+            f"source {src} is not a regular file or directory (mode {oct(mode)})"
+        )
 
 
 HOOK_SIZE_MAX_BYTES = 64 * 1024  # 64 KiB
