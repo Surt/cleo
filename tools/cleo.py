@@ -962,12 +962,31 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_require(args: argparse.Namespace) -> int:
+    from lib.sources import parse_source, SourceKind
+
     project = args.project.resolve()
     manifest = load_manifest(project) if _manifest_path(project).exists() else None
 
-    pkg_ref = args.package
+    raw_spec = args.package
     constraint = args.constraint or "*"
-    repo_url = args.repo
+    explicit_repo = args.repo
+
+    try:
+        src = parse_source(raw_spec)
+    except ValueError as exc:
+        err(str(exc))
+        return 1
+
+    if src.kind == SourceKind.GIT_SUBDIR:
+        err("subdir source form not yet implemented (task B3)")
+        return 1
+
+    if src.kind == SourceKind.LOCAL_PATH:
+        err("local path source form not yet implemented (task B4)")
+        return 1
+
+    pkg_ref = src.name
+    repo_url = explicit_repo or src.url
 
     try:
         validate_package_ref(pkg_ref)
@@ -978,14 +997,9 @@ def cmd_require(args: argparse.Namespace) -> int:
     bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
 
     if manifest is None:
-        data = scaffold_manifest(project)
+        scaffold_manifest(project)
         info("Created cleo.json")
-    else:
-        data = manifest
-
-    # Resolve URL — falls back to GitHub convention automatically.
-    if not repo_url:
-        repo_url = _resolve_url(data, pkg_ref, None)
+        manifest = load_manifest(project)
 
     try:
         validate_git_ref(repo_url)
@@ -993,10 +1007,11 @@ def cmd_require(args: argparse.Namespace) -> int:
         err(str(exc))
         return 1
 
+    install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")
 
-    install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
     result = install_package(
         project, pkg_ref, repo_url, constraint, bucket,
         install_mode=install_mode,

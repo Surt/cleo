@@ -541,7 +541,11 @@ class TestPackageRefGateCLI:
             f"stdout={r.stdout!r} stderr={r.stderr!r}"
         )
         combined = (r.stdout + r.stderr).lower()
-        assert "package reference" in combined or "vendor" in combined
+        assert (
+            "package reference" in combined
+            or "vendor" in combined
+            or "unrecognized source" in combined
+        )
         # Nothing should be written outside the project, and the project
         # manifest must not list the bad ref.
         manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
@@ -811,3 +815,59 @@ def test_install_package_records_copy_mode_default(tmp_path, monkeypatch):
     dst = project / ".claude" / "skills" / "cleo-test-pkg-my-skill"
     assert dst.is_dir()
     assert not dst.is_symlink()
+
+
+# ---- B2: cmd_require accepts URL and shorthand as positional source ----------
+
+class TestRequireSources:
+    """cmd_require accepts GitHub shorthand and full URLs as positional arg."""
+
+    def _fake_clone(self, captured: dict, cdir_ref: list):
+        """Return a fake _clone_or_fetch that records the URL and writes a minimal package."""
+        def fake_clone(url, cdir, tag, expected_commit=None):
+            captured["url"] = url
+            cdir.mkdir(parents=True, exist_ok=True)
+            (cdir / "cleo.json").write_text(
+                '{"name":"test/foo","type":"skills-pack","version":"1.0.0"}\n',
+                encoding="utf-8",
+            )
+            sd = cdir / "skills" / "x"
+            sd.mkdir(parents=True)
+            (sd / "SKILL.md").write_text(
+                "---\nname: x\ndescription: y\n---\n", encoding="utf-8"
+            )
+            return True
+        return fake_clone
+
+    def test_require_accepts_github_shorthand_as_positional(self, tmp_path, monkeypatch):
+        """`cleo require foo/bar` resolves to https://github.com/foo/bar without --repo."""
+        import cleo as cleo_mod
+
+        monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.0.0", "v1.0.0"))
+        monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "a" * 40)
+        captured = {}
+        monkeypatch.setattr(cleo_mod, "_clone_or_fetch", self._fake_clone(captured, []))
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        rc = cleo_mod.main(["--project", str(project), "require", "test/foo", "--quiet"])
+        assert rc == 0
+        assert captured["url"] == "https://github.com/test/foo"
+
+    def test_require_accepts_full_url_as_positional(self, tmp_path, monkeypatch):
+        """`cleo require https://github.com/foo/bar` works without --repo."""
+        import cleo as cleo_mod
+
+        monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+        monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.0.0", "v1.0.0"))
+        monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "a" * 40)
+        captured = {}
+        monkeypatch.setattr(cleo_mod, "_clone_or_fetch", self._fake_clone(captured, []))
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        rc = cleo_mod.main(["--project", str(project), "require",
+                             "https://github.com/test/foo", "--quiet"])
+        assert rc == 0
+        assert captured["url"] == "https://github.com/test/foo"
