@@ -78,6 +78,14 @@ def file_url(path: Path) -> str:
     return "file:///" + str(path).replace("\\", "/")
 
 
+def _git_log_subjects(pkg_dir: Path) -> list[str]:
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "log", "--format=%s"],
+        capture_output=True, text=True, check=True,
+    )
+    return r.stdout.strip().splitlines()
+
+
 # ---- B3: --project flag works before AND after the subcommand ---------------
 
 class TestProjectFlagPosition:
@@ -1387,3 +1395,241 @@ def test_adopt_falls_back_when_git_remote_is_invalid(tmp_path, monkeypatch, caps
         # No lock entry should use the tampered URL.
         if not url.startswith("file://"):
             assert "\x00" not in url
+
+
+# ---- cleo publish: bare invocation ----------------------------------------
+
+class TestPublishBare:
+    def _make_publishable_pkg(self, pkg_dir: Path) -> None:
+        pkg_dir.mkdir(exist_ok=True)
+        (pkg_dir / "rules").mkdir()
+        (pkg_dir / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for publish bare test\n---\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg_dir, "init", "-q", "-b", "main")
+        _git(pkg_dir, "config", "user.email", "t@t.t")
+        _git(pkg_dir, "config", "user.name", "t")
+        _git(pkg_dir, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+        _git(pkg_dir, "add", "-A")
+        _git(pkg_dir, "commit", "-qm", "init")
+        _git(pkg_dir, "tag", "v0.1.0")
+
+    def test_bare_writes_manifest_and_validates(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        self._make_publishable_pkg(pkg)
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        data = json.loads((pkg / "cleo.json").read_text(encoding="utf-8"))
+        assert data["name"] == "acme/widgets"
+        assert data["type"] == "skills-pack"
+        assert data["version"] == "0.1.0"
+
+    def test_bare_preserves_existing_description(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        self._make_publishable_pkg(pkg)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "acme/widgets", "type": "skills-pack",
+                        "version": "0.1.0", "description": "hand-written"}),
+            encoding="utf-8",
+        )
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        data = json.loads((pkg / "cleo.json").read_text(encoding="utf-8"))
+        assert data["description"] == "hand-written"
+
+    def test_bare_fails_on_validation_error(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "remote", "add", "origin", "https://github.com/acme/widgets.git")
+        (pkg / "README.md").write_text("nothing here", encoding="utf-8")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "init")
+        _git(pkg, "tag", "v0.1.0")
+        r = run_cleo("publish", "--package", str(pkg))
+        assert r.returncode != 0
+        assert "artifact" in (r.stdout + r.stderr).lower()
+
+
+class TestPublishBump:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_bump_patch(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.1.1"
+
+    def test_bump_minor(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "minor", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.2.0"
+
+    def test_bump_major(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "major", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "1.0.0"
+
+    def test_bump_rejects_unknown_level(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "weird", "--package", str(pkg))
+        assert r.returncode != 0
+
+
+class TestPublishCommit:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_commit_creates_manifest_commit_when_bumping(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--commit", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert _git_log_subjects(pkg)[0] == "chore(publish): v0.1.1"
+
+    def test_commit_skips_when_clean_no_bump(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r1 = run_cleo("publish", "--commit", "--package", str(pkg))
+        assert r1.returncode == 0, r1.stderr
+        before = _git_log_subjects(pkg)
+        r2 = run_cleo("publish", "--commit", "--package", str(pkg))
+        assert r2.returncode == 0, r2.stderr
+        assert _git_log_subjects(pkg) == before
+
+
+class TestPublishTag:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_tag_creates_new_tag(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "v0.1.1" in tags
+
+    def test_tag_idempotent_when_pointing_at_head(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r1 = run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        assert r1.returncode == 0
+        r2 = run_cleo("publish", "--commit", "--tag", "--package", str(pkg))
+        assert r2.returncode == 0, r2.stderr
+
+    def test_tag_refuses_when_pointing_elsewhere(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: updated body for tag-elsewhere test\n---\nbody2\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "drift")
+        r = run_cleo("publish", "--tag", "--package", str(pkg))
+        assert r.returncode != 0
+        assert "tag" in (r.stdout + r.stderr).lower()
+
+    def test_tag_moves_with_yes(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        run_cleo("publish", "--bump", "patch", "--commit", "--tag", "--package", str(pkg))
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: updated body for tag-move test\n---\nbody2\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "drift")
+        new_head = subprocess.run(
+            ["git", "-C", str(pkg), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        r = run_cleo("publish", "--tag", "--yes", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        tag_sha = subprocess.run(
+            ["git", "-C", str(pkg), "rev-parse", "v0.1.1^{commit}"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert tag_sha == new_head
+
+
+class TestPublishPushAndRelease:
+    def _bare_remote(self, tmp_path: Path) -> Path:
+        bare = tmp_path / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", "-b", "main", "-q", str(bare)],
+            check=True, capture_output=True,
+        )
+        return bare
+
+    def _make_pkg_with_bare_remote(self, tmp_path: Path) -> tuple[Path, Path]:
+        bare = self._bare_remote(tmp_path)
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "acme/push-test", "type": "skills-pack", "version": "0.1.0"}),
+            encoding="utf-8",
+        )
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for push/release test\n---\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "remote", "add", "origin", str(bare))
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "init")
+        _git(pkg, "tag", "v0.1.0")
+        return pkg, bare
+
+    def test_release_runs_full_chain(self, tmp_path):
+        pkg, bare = self._make_pkg_with_bare_remote(tmp_path)
+        r = run_cleo("publish", "--release", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.1.1"
+        assert _git_log_subjects(pkg)[0] == "chore(publish): v0.1.1"
+        bare_tags = subprocess.run(
+            ["git", "-C", str(bare), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "v0.1.1" in bare_tags
+        bare_main = subprocess.run(
+            ["git", "-C", str(bare), "log", "main", "--format=%s"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "chore(publish): v0.1.1" in bare_main
+
+    def test_release_with_explicit_bump_minor(self, tmp_path):
+        pkg, _ = self._make_pkg_with_bare_remote(tmp_path)
+        r = run_cleo("publish", "--release", "--bump", "minor", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.2.0"
+
+    def test_validation_failure_short_circuits_before_git_ops(self, tmp_path):
+        pkg, bare = self._make_pkg_with_bare_remote(tmp_path)
+        (pkg / "rules" / "r.md").write_text("no frontmatter at all\n", encoding="utf-8")
+        before_log = _git_log_subjects(pkg)
+        before_tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        r = run_cleo("publish", "--release", "--package", str(pkg))
+        assert r.returncode != 0
+        assert _git_log_subjects(pkg) == before_log
+        after_tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert before_tags == after_tags
+        bare_main_exists = subprocess.run(
+            ["git", "-C", str(bare), "rev-parse", "--verify", "main"],
+            capture_output=True, text=True,
+        )
+        assert bare_main_exists.returncode != 0

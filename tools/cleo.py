@@ -56,6 +56,7 @@ from lib.security import (  # noqa: E402
     validate_package_ref,
     HOOK_SIZE_MAX_BYTES,
 )
+from lib import publish as publish_mod  # noqa: E402
 
 LOCK_VERSION = 1
 MANIFEST_FILE = "cleo.json"
@@ -1696,6 +1697,115 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_publish(args: argparse.Namespace) -> int:
+    pkg_dir = args.package.resolve()
+    if not pkg_dir.is_dir():
+        err(f"--package {pkg_dir} is not a directory")
+        return 1
+
+    if args.release:
+        if args.bump is None:
+            args.bump = "patch"
+        args.commit = True
+        args.tag = True
+        args.push = True
+
+    cleo_json = pkg_dir / "cleo.json"
+    existing: dict | None = None
+    if cleo_json.exists():
+        try:
+            existing = json.loads(cleo_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            err(f"existing cleo.json is not valid JSON: {exc}")
+            return 1
+
+    detected = publish_mod.detect_package(pkg_dir)
+    merged = publish_mod.merge_manifest(existing, detected)
+    if "name" not in merged:
+        err("cannot detect package name — set `name` in cleo.json or "
+            "configure an origin remote matching <vendor>/<name>")
+        return 1
+
+    if args.bump:
+        current = merged.get("version", "0.0.0")
+        try:
+            merged["version"] = publish_mod.bump_version(current, args.bump)
+        except ValueError as exc:
+            err(str(exc))
+            return 1
+        if not args.quiet:
+            info(f"bumped version {current} → {merged['version']}")
+
+    changed = publish_mod.write_manifest(pkg_dir, merged)
+    if changed and not args.quiet:
+        info(f"refreshed {pkg_dir / 'cleo.json'}")
+
+    errors = publish_mod.validate_publish(pkg_dir)
+    if errors:
+        for e in errors:
+            err(e)
+        return 1
+
+    if args.commit:
+        version_for_subject = merged.get("version", "0.0.0")
+        if publish_mod.working_tree_dirty(pkg_dir, ["cleo.json"]):
+            try:
+                publish_mod.commit_file(
+                    pkg_dir, "cleo.json", f"chore(publish): v{version_for_subject}",
+                )
+            except RuntimeError as exc:
+                err(str(exc))
+                return 1
+            if not args.quiet:
+                ok(f"committed cleo.json (v{version_for_subject})")
+        elif not args.quiet:
+            info("cleo.json already committed — nothing to do")
+
+    if args.tag:
+        version_for_tag = merged.get("version", "0.0.0")
+        tag = f"v{version_for_tag}"
+        try:
+            if publish_mod.tag_exists(pkg_dir, tag):
+                if publish_mod.tag_at_head(pkg_dir, tag):
+                    if not args.quiet:
+                        info(f"tag {tag} already at HEAD — skipping")
+                elif args.yes:
+                    publish_mod.delete_tag(pkg_dir, tag)
+                    publish_mod.create_tag(pkg_dir, tag)
+                    if not args.quiet:
+                        ok(f"moved tag {tag} to HEAD")
+                else:
+                    err(f"tag {tag} already exists at a different commit "
+                        f"(rerun with --yes to move it)")
+                    return 1
+            else:
+                publish_mod.create_tag(pkg_dir, tag)
+                if not args.quiet:
+                    ok(f"created tag {tag}")
+        except (RuntimeError, SecurityViolation) as exc:
+            err(str(exc))
+            return 1
+
+    if args.push:
+        version_for_tag = merged.get("version", "0.0.0")
+        tag = f"v{version_for_tag}"
+        branch = publish_mod.current_branch(pkg_dir)
+        if not branch:
+            err("HEAD is detached — cannot push a branch ref")
+            return 1
+        try:
+            publish_mod.push(pkg_dir, args.remote, [f"HEAD:refs/heads/{branch}", tag])
+        except (RuntimeError, SecurityViolation) as exc:
+            err(str(exc))
+            return 1
+        if not args.quiet:
+            ok(f"pushed {branch} + {tag} to {args.remote}")
+
+    if not args.quiet:
+        ok(f"{merged['name']} {merged.get('version', '?')} [{merged.get('type')}] — validation passed")
+    return 0
+
+
 # ---- CLI ----------------------------------------------------------------
 
 
@@ -1768,6 +1878,26 @@ def main(argv: list[str]) -> int:
 
     s = sub.add_parser("init", help="Scaffold a starter cleo.json", parents=[common_sub])
     s.set_defaults(fn=cmd_init)
+
+    s = sub.add_parser("publish", help="Refresh package cleo.json, validate, and optionally release",
+                       parents=[common_sub])
+    s.add_argument("--package", type=Path, default=Path.cwd(),
+                   help="Path to the package repo (default: cwd)")
+    s.add_argument("--bump", choices=["patch", "minor", "major"], default=None,
+                   help="Bump version in cleo.json before validating")
+    s.add_argument("--commit", action="store_true",
+                   help="git add cleo.json and commit it")
+    s.add_argument("--tag", action="store_true",
+                   help="git tag vX.Y.Z on HEAD after committing")
+    s.add_argument("--yes", action="store_true",
+                   help="skip confirms; allow tag overwrite")
+    s.add_argument("--push", action="store_true",
+                   help="git push HEAD + the new tag to --remote")
+    s.add_argument("--release", action="store_true",
+                   help="shortcut for --bump patch --commit --tag --push")
+    s.add_argument("--remote", default="origin",
+                   help="git remote name for --push (default: origin)")
+    s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)
     # Propagate --quiet to subcommands that don't declare it explicitly
