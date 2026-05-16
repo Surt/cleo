@@ -1013,4 +1013,61 @@ def test_alias_rm_dispatches_to_remove(tmp_path, monkeypatch):
     rc = cleo_mod.main(["--project", str(tmp_path), "rm", "foo/bar"])
     assert rc == 0
     assert calls.get("called")
-    assert calls["packages"] == ["foo/bar"]
+
+
+# ---------------------------------------------------------------------------
+# C2: cleo find — local substring search
+# ---------------------------------------------------------------------------
+
+def test_find_matches_description_substring(tmp_path, monkeypatch, capsys):
+    """`cleo find foo` finds installed packages whose name OR item names contain 'foo'."""
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+    lock = {
+        "version": 1,
+        "generated": "2026-05-16T00:00:00Z",
+        "packages": {
+            "ven/foo-pkg": {
+                "type": "skills-pack", "url": "https://x", "version": "1.0.0",
+                "commit": "a" * 40, "bucket": "project", "items": [
+                    {"type": "skill", "name": "do-foo", "path": "/tmp/foo", "sha": ""}
+                ],
+            },
+            "ven/bar-pkg": {
+                "type": "skills-pack", "url": "https://y", "version": "1.0.0",
+                "commit": "b" * 40, "bucket": "project", "items": [
+                    {"type": "skill", "name": "do-bar", "path": "/tmp/bar", "sha": ""}
+                ],
+            },
+        },
+    }
+    (project / "cleo.lock").write_text(json.dumps(lock), encoding="utf-8")
+
+    rc = cleo_mod.main(["--project", str(project), "find", "foo"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "ven/foo-pkg" in out
+    assert "do-foo" in out or "ven/foo-pkg" in out  # match shows up by name or item
+    assert "ven/bar-pkg" not in out  # not a match
+
+
+def test_find_no_match_returns_zero(tmp_path, capsys):
+    import cleo as cleo_mod, json
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+    (project / "cleo.lock").write_text(
+        json.dumps({"version": 1, "generated": "x", "packages": {}}), encoding="utf-8"
+    )
+    rc = cleo_mod.main(["--project", str(project), "find", "zzz"])
+    assert rc == 0

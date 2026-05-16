@@ -1390,6 +1390,63 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _find_in_frontmatter(root: Path, q: str) -> Optional[str]:
+    """Return the relative path of the first .md file whose frontmatter
+    description contains `q`, or None.
+    """
+    for md in root.rglob("*.md"):
+        try:
+            text = md.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        fm, _ = parse_frontmatter(text)
+        if fm and q in (fm.get("description", "") or "").lower():
+            return md.relative_to(root).as_posix()
+    return None
+
+
+def cmd_find(args: argparse.Namespace) -> int:
+    """Substring-match the query over installed package names, item names,
+    and descriptions found in their SKILL.md / rule frontmatter.
+
+    Local-only — does not query a remote index.
+    """
+    project = args.project.resolve()
+    lock = load_lock(project)
+    if not lock:
+        info("No packages installed.")
+        return 0
+
+    q = args.query.lower()
+    matched: list[tuple[str, str]] = []  # (package, reason)
+    for pkg_name, pkg in sorted(lock.items()):
+        if q in pkg_name.lower():
+            matched.append((pkg_name, f"name matches '{args.query}'"))
+            continue
+        item_hit = False
+        for item in pkg.items:
+            if q in item.name.lower():
+                matched.append((pkg_name, f"item {item.name} matches"))
+                item_hit = True
+                break
+        if item_hit:
+            continue
+        cache = _pkg_cache_dir(pkg_name, pkg.version)
+        if cache.exists():
+            hit_item = _find_in_frontmatter(cache, q)
+            if hit_item:
+                matched.append((pkg_name, f"description matches in {hit_item}"))
+
+    if not matched:
+        info(f"No matches for {args.query!r}.")
+        return 0
+
+    info(f"{len(matched)} match(es) for {args.query!r}:")
+    for name, why in matched:
+        print(f"  {name} — {why}")
+    return 0
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     project = args.project.resolve()
     manifest = load_manifest(project)
@@ -1584,6 +1641,10 @@ def main(argv: list[str]) -> int:
     s.add_argument("--json", action="store_true")
     s.add_argument("--verbose", "-v", action="store_true")
     s.set_defaults(fn=cmd_list)
+
+    s = sub.add_parser("find", help="Search installed packages by name or description", parents=[common_sub])
+    s.add_argument("query")
+    s.set_defaults(fn=cmd_find)
 
     s = sub.add_parser("check", help="Validate cleo.json and report drift", parents=[common_sub])
     s.set_defaults(fn=cmd_check)
