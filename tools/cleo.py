@@ -70,6 +70,7 @@ LOCAL_TYPES = {"rule", "skill", "agent", "command"}
 USER_TYPES = {"rule", "skill", "agent", "command"}
 
 VALID_PKG_TYPES = ("skills-pack", "mcp-server", "mixed")
+VALID_INSTALL_MODES = ("copy", "symlink")
 
 DEST_BY_TYPE = {
     "rule":    (Path(".claude/rules"),    ".md"),
@@ -235,6 +236,70 @@ def manifest_add_package(project: Path, name: str, constraint: str, bucket: str,
     save_manifest(project, data)
 
 
+def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
+    """Register one discovered skill dir into cleo.json + cleo.lock.
+
+    Strategy:
+    - If d.git_remote is set, register as a regular git-sourced package
+      with constraint "*"; commit is left empty (next `cleo update` resolves).
+    - Otherwise register as a `file://` source against the discovery's path
+      (or its symlink target if it's a symlink).
+    """
+    # Synthesize a package name from the skill dir name.
+    # validate_package_ref requires [a-z0-9._-]; lowercase + char-filter
+    # to satisfy that gate. Falls back to a generic name if nothing survives.
+    safe = d.skill_name.replace("/", "-").replace(" ", "-").lower()
+    safe = "".join(c for c in safe if c.isalnum() or c in "._-")
+    safe = safe.lstrip("-.")
+    if not safe:
+        safe = "skill"
+    pkg_name = f"adopted/{safe}"
+
+    src_path = d.symlink_target if d.is_symlink and d.symlink_target else d.path
+
+    if d.git_remote:
+        try:
+            validate_git_ref(d.git_remote)
+            url = d.git_remote
+            constraint = "*"
+            lock_pkg = LockPackage(
+                name=pkg_name, pkg_type="skills-pack", url=url,
+                version="0.0.0+adopted", commit="",
+                bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+                items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+            )
+        except SecurityViolation as exc:
+            warn(f"adopt {pkg_name}: invalid git remote ({exc}); falling back to local path")
+            url = f"file://{src_path}"
+            constraint = "*"
+            lock_pkg = LockPackage(
+                name=pkg_name, pkg_type="skills-pack", url=url,
+                version="0.0.0+local", commit="0" * 40,
+                bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+                items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+            )
+    else:
+        url = f"file://{src_path}"
+        constraint = "*"
+        lock_pkg = LockPackage(
+            name=pkg_name, pkg_type="skills-pack", url=url,
+            version="0.0.0+local", commit="0" * 40,
+            bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+            items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+        )
+
+    if not quiet:
+        ok(f"adopt {pkg_name} (from {url}){' (dry-run)' if dry_run else ''}")
+
+    if dry_run:
+        return
+
+    manifest_add_package(project, pkg_name, constraint, BUCKET_USER, url)
+    lock = load_lock(project)
+    lock[pkg_name] = lock_pkg
+    save_lock(project, lock)
+
+
 GITHUB_BASE = "https://github.com"
 
 
@@ -281,6 +346,13 @@ class LockPackage:
     bucket: str
     items: list[LockItem] = field(default_factory=list)
     mcp_server_key: Optional[str] = None
+    install_mode: str = "copy"  # "copy" | "symlink"
+
+    def __post_init__(self) -> None:
+        if self.install_mode not in VALID_INSTALL_MODES:
+            raise ValueError(
+                f"install_mode must be one of {VALID_INSTALL_MODES}, got {self.install_mode!r}"
+            )
 
     def to_dict(self) -> dict:
         d: dict = {
@@ -293,6 +365,8 @@ class LockPackage:
         }
         if self.mcp_server_key:
             d["mcp_server_key"] = self.mcp_server_key
+        if self.install_mode != "copy":
+            d["install_mode"] = self.install_mode
         return d
 
     @classmethod
@@ -305,6 +379,7 @@ class LockPackage:
             commit=d.get("commit", ""),
             bucket=d.get("bucket", BUCKET_PROJECT),
             mcp_server_key=d.get("mcp_server_key"),
+            install_mode=d.get("install_mode", "copy"),
             items=[
                 LockItem(type=i["type"], name=i["name"], path=i["path"], sha=i.get("sha", ""))
                 for i in d.get("items", [])
@@ -415,6 +490,93 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
         return result.returncode == 0
     except (FileNotFoundError, OSError):
         return False
+
+
+def _clone_or_fetch_subdir(
+    url: str,
+    cache_dir: Path,
+    ref: str,
+    subpath: str,
+    *,
+    expected_commit: Optional[str] = None,
+) -> bool:
+    """Clone only `subpath` from `url` at `ref` into `cache_dir`.
+
+    Uses `git sparse-checkout` to materialize a single directory. After clone,
+    the named subpath's contents are promoted to cache_dir root (so the rest
+    of cleo treats it like a normal single-skill package).
+
+    Synthesizes a minimal `cleo.json` if absent so manifest validation passes.
+    """
+    try:
+        validate_git_ref(url)
+        validate_git_ref(ref)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return False
+    # Block path traversal in subpath.
+    if ".." in subpath.split("/") or subpath.startswith("/"):
+        err(f"invalid subpath: {subpath!r}")
+        return False
+
+    if cache_dir.exists():
+        _rmtree_force(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        r1 = subprocess.run(
+            ["git", "clone", "--depth=1", "--branch", ref, "--no-checkout",
+             "--filter=blob:none", "--", url, str(cache_dir)],
+            capture_output=True, text=True,
+        )
+        if r1.returncode != 0:
+            return False
+        r2 = subprocess.run(
+            ["git", "-C", str(cache_dir), "sparse-checkout", "set", "--no-cone", "--", subpath],
+            capture_output=True, text=True,
+        )
+        if r2.returncode != 0:
+            return False
+        r3 = subprocess.run(
+            ["git", "-C", str(cache_dir), "checkout"],
+            capture_output=True, text=True,
+        )
+        if r3.returncode != 0:
+            return False
+    except (FileNotFoundError, OSError):
+        return False
+
+    # Promote subpath contents to cache_dir root.
+    src_dir = cache_dir / subpath
+    if not src_dir.exists():
+        err(f"subpath {subpath!r} not found in repo")
+        return False
+    for child in src_dir.iterdir():
+        target = cache_dir / child.name
+        if target.exists():
+            continue  # collision (unlikely) — skip rather than overwrite
+        shutil.move(str(child), str(target))
+    # Remove the now-empty subpath tree.
+    parts = Path(subpath).parts
+    if parts:
+        top = cache_dir / parts[0]
+        if top.exists():
+            shutil.rmtree(top, ignore_errors=True)
+
+    # Synthesize cleo.json if absent.
+    cleo_json = cache_dir / "cleo.json"
+    if not cleo_json.exists():
+        owner_repo = url.rstrip("/").removesuffix(".git").rsplit("/", 2)[-2:]
+        synth_name = "/".join(owner_repo) if len(owner_repo) == 2 else "subdir/pkg"
+        cleo_json.write_text(
+            json.dumps({
+                "name": synth_name,
+                "type": "skills-pack",
+                "description": f"Subdir install: {subpath}",
+            }, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return True
 
 
 def _read_package_manifest(cache_dir: Path) -> dict | None:
@@ -670,6 +832,36 @@ def _materialize(src: Path, dst: Path) -> None:
         os.replace(tmp, dst)
 
 
+def _materialize_symlink(src: Path, dst: Path) -> None:
+    """Symlink dst → src. Replaces existing dst atomically via tmp-rename.
+
+    Raises OSError if the OS rejects symlink creation (Windows without
+    developer mode / admin). On failure, dst is left in its prior state.
+    Callers are responsible for fallback.
+    """
+    assert src.exists(), f"_materialize_symlink: src must exist: {src}"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp = dst.with_name(dst.name + ".tmp")
+    # Clean stale tmp (best-effort; if cleanup fails, the symlink call will fail loudly).
+    if tmp.is_symlink() or tmp.exists():
+        if tmp.is_dir() and not tmp.is_symlink():
+            shutil.rmtree(tmp)
+        else:
+            tmp.unlink()
+
+    # Build the symlink at tmp. If this raises OSError (Windows no-privilege),
+    # dst is untouched.
+    os.symlink(src.resolve(), tmp, target_is_directory=src.is_dir())
+
+    # Atomic swap. os.replace on POSIX renames over an existing target file/symlink
+    # atomically. For directory dst we have to remove first, narrowing the
+    # window to just the rename call.
+    if dst.is_dir() and not dst.is_symlink():
+        shutil.rmtree(dst)
+    os.replace(tmp, dst)
+
+
 # ---- Install a single package -------------------------------------------
 
 
@@ -682,6 +874,7 @@ def install_package(
     *,
     locked_version: Optional[str] = None,
     locked_commit: Optional[str] = None,
+    install_mode: str = "copy",
     dry_run: bool = False,
     offline: bool = False,
     quiet: bool = False,
@@ -763,6 +956,7 @@ def install_package(
     lock_pkg = LockPackage(
         name=name, pkg_type=pkg_type, url=url,
         version=version, commit=commit, bucket=bucket,
+        install_mode=install_mode,
     )
 
     # Materialize artifacts (rules/skills/agents/commands/hooks)
@@ -785,7 +979,15 @@ def install_package(
                 err(f"{name}: {exc}")
                 return None
             dst = _dest_path(project, type_, name, item_name, bucket)
-            _materialize(src, dst)
+            if install_mode == "symlink":
+                try:
+                    _materialize_symlink(src, dst)
+                except OSError as exc:
+                    warn(f"{name}: symlink not permitted ({exc}); falling back to copy")
+                    _materialize(src, dst)
+                    lock_pkg.install_mode = "copy"
+            else:
+                _materialize(src, dst)
             sha = sha256_artifact(dst)
             lock_pkg.items.append(LockItem(type=type_, name=item_name, path=str(dst), sha=sha))
             if not quiet:
@@ -815,6 +1017,95 @@ def install_package(
     return lock_pkg
 
 
+def _install_from_local_dir(
+    project: Path, name: str, url: str, *,
+    cache_dir: Path, bucket: str, install_mode: str = "copy", quiet: bool = False,
+) -> Optional[LockPackage]:
+    """Install a package whose source lives at `cache_dir` on disk (no clone).
+
+    Mirrors `install_package`'s materialize loop but skips fetch and version
+    resolution. Used by the local-path source form.
+    """
+    try:
+        pkg_manifest = _read_package_manifest(cache_dir)
+        validate_package_manifest(pkg_manifest, name)
+    except SecurityViolation as exc:
+        err(f"{name}: {exc}")
+        return None
+
+    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    if pkg_type not in VALID_PKG_TYPES:
+        err(f"{name}: unknown package type {pkg_type!r}")
+        return None
+
+    items_found = discover_items(cache_dir)
+    has_mcp_json = (cache_dir / "mcp.json").exists()
+    try:
+        validate_package_has_artifacts(
+            items_count=len(items_found),
+            has_mcp_json=has_mcp_json,
+            pkg_type=pkg_type,
+        )
+    except SecurityViolation as exc:
+        err(f"{name}: {exc}")
+        return None
+
+    lock_pkg = LockPackage(
+        name=name, pkg_type=pkg_type, url=url,
+        version="0.0.0+local", commit="0" * 40, bucket=bucket,
+        install_mode=install_mode,
+    )
+
+    if pkg_type in ("skills-pack", "mixed"):
+        if bucket == BUCKET_USER:
+            forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
+            if forbidden:
+                err(f"{name}: user bucket does not support {', '.join(forbidden)}")
+                return None
+        for type_, item_name, item_path in items_found:
+            if type_ == "hook":
+                continue
+            try:
+                validate_dest_item_name(item_name)
+                source_p = _source_for_item(type_, item_name, item_path, cache_dir)
+                validate_item_source(source_p, cache_dir)
+            except SecurityViolation as exc:
+                err(f"{name}: {exc}")
+                return None
+            dst = _dest_path(project, type_, name, item_name, bucket)
+            if install_mode == "symlink":
+                try:
+                    _materialize_symlink(source_p, dst)
+                except OSError as exc:
+                    warn(f"{name}: symlink not permitted ({exc}); falling back to copy")
+                    _materialize(source_p, dst)
+                    lock_pkg.install_mode = "copy"
+            else:
+                _materialize(source_p, dst)
+            sha = sha256_artifact(dst)
+            lock_pkg.items.append(LockItem(type=type_, name=item_name, path=str(dst), sha=sha))
+            if not quiet:
+                ok(f"  {type_} {item_name}")
+
+        try:
+            hook_names = install_hooks(project, bucket, name, cache_dir, quiet=quiet)
+        except SecurityViolation:
+            return None
+        for hn in hook_names:
+            lock_pkg.items.append(LockItem(type="hook", name=hn, path="", sha=""))
+        if bucket == BUCKET_LOCAL:
+            _write_gitignore_block(project)
+
+    if pkg_type in ("mcp-server", "mixed"):
+        server_key = install_mcp_server(project, bucket, name, cache_dir, quiet=quiet)
+        lock_pkg.mcp_server_key = server_key
+
+    if not quiet:
+        item_count = len([i for i in lock_pkg.items if i.type != "hook"])
+        ok(f"{name} [local, {pkg_type}] {item_count} item(s)")
+    return lock_pkg
+
+
 # ---- Subcommands --------------------------------------------------------
 
 
@@ -829,6 +1120,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     install, and write a fresh lock.
     """
     project = args.project.resolve()
+    cli_install_mode = "symlink" if getattr(args, "symlink", False) else None
     manifest = load_manifest(project)
     lock = load_lock(project)
     lock_exists = _lock_path(project).exists()
@@ -866,6 +1158,7 @@ def cmd_install(args: argparse.Namespace) -> int:
                     project, pkg_name, existing.url, constraint, bucket,
                     locked_version=existing.version,
                     locked_commit=existing.commit,
+                    install_mode=cli_install_mode or existing.install_mode,
                     dry_run=args.dry_run,
                     offline=args.offline,
                     quiet=args.quiet,
@@ -885,6 +1178,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
             result = install_package(
                 project, pkg_name, url, constraint, bucket,
+                install_mode=cli_install_mode or "copy",
                 dry_run=args.dry_run,
                 offline=args.offline,
                 quiet=args.quiet,
@@ -908,12 +1202,100 @@ def cmd_install(args: argparse.Namespace) -> int:
 
 
 def cmd_require(args: argparse.Namespace) -> int:
+    from lib.sources import parse_source, SourceKind
+
     project = args.project.resolve()
     manifest = load_manifest(project) if _manifest_path(project).exists() else None
 
-    pkg_ref = args.package
+    raw_spec = args.package
     constraint = args.constraint or "*"
-    repo_url = args.repo
+    explicit_repo = args.repo
+
+    try:
+        src = parse_source(raw_spec)
+    except ValueError as exc:
+        err(str(exc))
+        return 1
+
+    if src.kind == SourceKind.GIT_SUBDIR:
+        pkg_ref = src.name
+        try:
+            validate_package_ref(pkg_ref)
+            validate_git_ref(src.url)
+        except SecurityViolation as exc:
+            err(str(exc))
+            return 1
+
+        bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
+        if manifest is None:
+            scaffold_manifest(project)
+            manifest = load_manifest(project)
+
+        ref = src.ref or "main"
+        version = "0.0.0+subdir"
+        commit = resolve_commit(src.url, ref) or ""
+
+        cache_dir = _pkg_cache_dir(pkg_ref, version)
+        if not args.dry_run:
+            if not _clone_or_fetch_subdir(src.url, cache_dir, ref, src.subpath,
+                                           expected_commit=commit or None):
+                err(f"{pkg_ref}: failed to fetch subdir from {src.url}")
+                return 1
+
+        install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+        result = install_package(
+            project, pkg_ref, src.url, constraint, bucket,
+            locked_version=version, locked_commit=commit or "0" * 40,
+            install_mode=install_mode,
+            dry_run=args.dry_run, quiet=args.quiet,
+        )
+        if result is None:
+            return 1
+        manifest_add_package(project, pkg_ref, constraint, bucket, src.url)
+        lock = load_lock(project)
+        lock[pkg_ref] = result
+        if not args.dry_run:
+            save_lock(project, lock)
+        if not args.quiet:
+            ok(f"Added {pkg_ref} (subdir: {src.subpath})")
+        return 0
+
+    if src.kind == SourceKind.LOCAL_PATH:
+        pkg_ref = src.name
+        try:
+            validate_package_ref(pkg_ref)
+        except SecurityViolation as exc:
+            err(str(exc))
+            return 1
+        bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
+        if manifest is None:
+            scaffold_manifest(project)
+            manifest = load_manifest(project)
+
+        if args.dry_run:
+            if not args.quiet:
+                ok(f"Would add {pkg_ref} (local: {src.local_path}) (dry-run)")
+            return 0
+
+        cache_dir = src.local_path
+        install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+        result = _install_from_local_dir(
+            project, pkg_ref, f"file://{src.local_path}",
+            cache_dir=src.local_path, bucket=bucket,
+            install_mode=install_mode, quiet=args.quiet,
+        )
+        if result is None:
+            return 1
+        manifest_add_package(project, pkg_ref, "*", bucket, f"file://{src.local_path}")
+        lock = load_lock(project)
+        lock[pkg_ref] = result
+        save_lock(project, lock)
+        if not args.quiet:
+            ok(f"Added {pkg_ref} (local: {src.local_path})")
+        return 0
+
+    pkg_ref = src.name
+    repo_url = explicit_repo or src.url
 
     try:
         validate_package_ref(pkg_ref)
@@ -924,14 +1306,9 @@ def cmd_require(args: argparse.Namespace) -> int:
     bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
 
     if manifest is None:
-        data = scaffold_manifest(project)
+        scaffold_manifest(project)
         info("Created cleo.json")
-    else:
-        data = manifest
-
-    # Resolve URL — falls back to GitHub convention automatically.
-    if not repo_url:
-        repo_url = _resolve_url(data, pkg_ref, None)
+        manifest = load_manifest(project)
 
     try:
         validate_git_ref(repo_url)
@@ -939,11 +1316,14 @@ def cmd_require(args: argparse.Namespace) -> int:
         err(str(exc))
         return 1
 
+    install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
+
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")
 
     result = install_package(
         project, pkg_ref, repo_url, constraint, bucket,
+        install_mode=install_mode,
         dry_run=args.dry_run, quiet=args.quiet,
     )
     if result is None:
@@ -964,10 +1344,52 @@ def cmd_require(args: argparse.Namespace) -> int:
 
 
 def cmd_update(args: argparse.Namespace) -> int:
-    project = args.project.resolve()
-    manifest = load_manifest(project)
-    lock = load_lock(project)
+    from lib.adopt import scan_untracked
 
+    project = args.project.resolve()
+    # Load manifest and lock conditionally so scan runs even when files are missing.
+    if _manifest_path(project).exists():
+        manifest = load_manifest(project)
+    else:
+        manifest = {}
+    if _lock_path(project).exists():
+        lock = load_lock(project)
+    else:
+        lock = {}
+
+    # ---- Pre-scan: surface untracked SKILL.md dirs in scope ----
+    scope = getattr(args, "scope", "both")
+    scan_dirs: list[Path] = []
+    if scope in ("project", "both"):
+        scan_dirs.append(project / ".claude" / "skills")
+    if scope in ("global", "both"):
+        scan_dirs.append(_user_home() / ".claude" / "skills")
+
+    tracked_paths: set[Path] = set()
+    for pkg in lock.values():
+        for item in pkg.items:
+            if item.path:
+                tracked_paths.add(Path(item.path))
+
+    discoveries = []
+    for sd in scan_dirs:
+        discoveries.extend(scan_untracked(sd, tracked_paths))
+
+    if discoveries:
+        if not getattr(args, "adopt", False):
+            names = ", ".join(d.skill_name for d in discoveries)
+            info(
+                f"note: {len(discoveries)} untracked skill director"
+                f"{'y' if len(discoveries) == 1 else 'ies'} found ({names})"
+            )
+            info("      re-run with --adopt to register them.")
+        else:
+            from lib.adopt import enrich_provenance
+            for d in discoveries:
+                enriched = enrich_provenance(d)
+                _adopt_one(project, enriched, dry_run=args.dry_run, quiet=args.quiet)
+
+    # ---- Existing update loop continues here ----
     if not lock:
         info("No packages installed. Run: cleo install")
         return 0
@@ -1001,6 +1423,11 @@ def cmd_update(args: argparse.Namespace) -> int:
             err(str(exc).replace(f"{TAG} ", ""))
             continue
 
+        if url.startswith("file://"):
+            # Local-path or adopted packages have no git version tags; skip silently.
+            already_current += 1
+            continue
+
         if not args.offline:
             resolved = resolve_version(url, constraint)
             if resolved is None:
@@ -1015,8 +1442,10 @@ def cmd_update(args: argparse.Namespace) -> int:
                     info(f"already current {pkg_name} {new_version}")
                 continue
 
+        existing_install_mode = existing.install_mode if existing else "copy"
         result = install_package(
             project, pkg_name, url, constraint, bucket,
+            install_mode=existing_install_mode,
             dry_run=args.dry_run, offline=args.offline, quiet=args.quiet,
         )
         if result is None:
@@ -1071,6 +1500,63 @@ def cmd_list(args: argparse.Namespace) -> int:
             info(f"{name} {pkg.version}")
             for item in pkg.items:
                 print(f"    {item.type:<10} {item.name:<40} {item.path}")
+    return 0
+
+
+def _find_in_frontmatter(root: Path, q: str) -> Optional[str]:
+    """Return the relative path of the first .md file whose frontmatter
+    description contains `q`, or None.
+    """
+    for md in root.rglob("*.md"):
+        try:
+            text = md.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        fm, _ = parse_frontmatter(text)
+        if fm and q in (fm.get("description", "") or "").lower():
+            return md.relative_to(root).as_posix()
+    return None
+
+
+def cmd_find(args: argparse.Namespace) -> int:
+    """Substring-match the query over installed package names, item names,
+    and descriptions found in their SKILL.md / rule frontmatter.
+
+    Local-only — does not query a remote index.
+    """
+    project = args.project.resolve()
+    lock = load_lock(project)
+    if not lock:
+        info("No packages installed.")
+        return 0
+
+    q = args.query.lower()
+    matched: list[tuple[str, str]] = []  # (package, reason)
+    for pkg_name, pkg in sorted(lock.items()):
+        if q in pkg_name.lower():
+            matched.append((pkg_name, f"name matches '{args.query}'"))
+            continue
+        item_hit = False
+        for item in pkg.items:
+            if q in item.name.lower():
+                matched.append((pkg_name, f"item {item.name} matches"))
+                item_hit = True
+                break
+        if item_hit:
+            continue
+        cache = _pkg_cache_dir(pkg_name, pkg.version)
+        if cache.exists():
+            hit_item = _find_in_frontmatter(cache, q)
+            if hit_item:
+                matched.append((pkg_name, f"description matches in {hit_item}"))
+
+    if not matched:
+        info(f"No matches for {args.query!r}.")
+        return 0
+
+    info(f"{len(matched)} match(es) for {args.query!r}:")
+    for name, why in matched:
+        print(f"  {name} — {why}")
     return 0
 
 
@@ -1238,18 +1724,22 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("install", help="Install packages from cleo.json", parents=[common_sub])
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--offline", action="store_true")
+    s.add_argument("--symlink", action="store_true",
+                   help="Symlink artifacts from cache (live updates) instead of copying")
     s.set_defaults(fn=cmd_install)
 
-    s = sub.add_parser("require", help="Add a package to cleo.json and install it", parents=[common_sub])
+    s = sub.add_parser("require", aliases=["add"], help="Add a package to cleo.json and install it", parents=[common_sub])
     s.add_argument("package", help="<vendor/name>[@constraint]")
     s.add_argument("--constraint", "-c", default="*")
     s.add_argument("--repo", help="Git URL for the package")
     s.add_argument("--local", action="store_true")
     s.add_argument("--user", action="store_true")
+    s.add_argument("--symlink", action="store_true",
+                   help="Symlink artifacts from cache (live updates) instead of copying")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_require)
 
-    s = sub.add_parser("remove", help="Remove packages, clean up files, update manifest", parents=[common_sub])
+    s = sub.add_parser("remove", aliases=["rm"], help="Remove packages, clean up files, update manifest", parents=[common_sub])
     s.add_argument("packages", nargs="+", metavar="vendor/pkg")
     s.set_defaults(fn=cmd_remove)
 
@@ -1258,12 +1748,20 @@ def main(argv: list[str]) -> int:
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--offline", action="store_true")
     s.add_argument("--force", action="store_true", help="Overwrite hand-edited files")
+    s.add_argument("--adopt", action="store_true",
+                   help="Register untracked SKILL.md directories found in .claude/skills/")
+    s.add_argument("--scope", choices=["project", "global", "both"], default="both",
+                   help="Where to scan for untracked skills (default: both)")
     s.set_defaults(fn=cmd_update)
 
-    s = sub.add_parser("list", help="List installed packages", parents=[common_sub])
+    s = sub.add_parser("list", aliases=["ls"], help="List installed packages", parents=[common_sub])
     s.add_argument("--json", action="store_true")
     s.add_argument("--verbose", "-v", action="store_true")
     s.set_defaults(fn=cmd_list)
+
+    s = sub.add_parser("find", help="Search installed packages by name or description", parents=[common_sub])
+    s.add_argument("query")
+    s.set_defaults(fn=cmd_find)
 
     s = sub.add_parser("check", help="Validate cleo.json and report drift", parents=[common_sub])
     s.set_defaults(fn=cmd_check)

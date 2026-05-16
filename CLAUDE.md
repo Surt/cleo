@@ -7,13 +7,16 @@ Dependency manager for the Claude ecosystem — rules, skills, agents, commands,
 ```
 .claude-plugin/marketplace.json   ← marketplace index (lists the cleo plugin)
 plugin/                           ← the installable Claude Code plugin
-  commands/                       ← /cleo-install /cleo-require /cleo-update /cleo-list
+  commands/                       ← /cleo-install /cleo-require /cleo-update /cleo-list /cleo-remove /cleo-find
   settings.json                   ← permission allowlists
 tools/
   cleo.py                         ← standalone CLI engine
   lib/
     semver.py                     ← semver parsing + constraint resolution
     checks.py                     ← frontmatter validation
+    security.py                   ← security gates (path traversal, ref shape, etc.)
+    sources.py                    ← source-form parsing for `cleo require`
+    adopt.py                      ← filesystem scan + provenance for `cleo update --adopt`
 spec/                             ← format specs (cleo.json, cleo.lock, package-format)
 cleo                              ← bash wrapper for standalone CLI
 cleo.cmd                          ← Windows wrapper
@@ -24,6 +27,9 @@ cleo.cmd                          ← Windows wrapper
 ```bash
 python3 tools/cleo.py install --project /path/to/project
 python3 tools/cleo.py require vendor/pkg --repo https://... --project /path/to/project
+python3 tools/cleo.py require vendor/pkg                        # github shorthand
+python3 tools/cleo.py require ./local-skills                    # local path
+python3 tools/cleo.py update --adopt                            # adopt skills installed by other tools
 python3 tools/cleo.py list
 ```
 
@@ -32,11 +38,15 @@ Or via the wrapper (after making it executable / adding to PATH):
 ```bash
 ./cleo install
 ./cleo require vendor/pkg --repo https://...
+./cleo add vendor/pkg                    # alias for require
+./cleo ls                                # alias for list
+./cleo rm vendor/pkg                     # alias for remove
+./cleo find <query>                      # search installed packages
 ```
 
 ## Plugin commands
 
-`/cleo-install`, `/cleo-require`, `/cleo-update`, `/cleo-list`
+`/cleo-install`, `/cleo-require` (alias `/cleo-add`), `/cleo-update`, `/cleo-list` (alias `/cleo-ls`), `/cleo-remove` (alias `/cleo-rm`), `/cleo-find`
 
 All delegate to `tools/cleo.py` in the marketplace clone (`~/.claude/plugins/marketplaces/cleo/`).
 

@@ -16,6 +16,7 @@ from cleo import (
     save_manifest,
     scaffold_manifest,
     _bucket_key,
+    LockPackage,
     MANIFEST_FILE,
     LOCK_FILE,
     BUCKET_PROJECT,
@@ -107,3 +108,70 @@ class TestBucketKey:
 
     def test_user(self):
         assert _bucket_key(BUCKET_USER) == "require-user"
+
+
+# ---- LockPackage.install_mode ----------------------------------------------
+
+class TestLockPackageInstallMode:
+    def test_serializes_install_mode_default(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+        )
+        d = pkg.to_dict()
+        assert "install_mode" not in d
+
+    def test_serializes_install_mode_symlink(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+            install_mode="symlink",
+        )
+        d = pkg.to_dict()
+        assert d["install_mode"] == "symlink"
+
+    def test_roundtrips_install_mode(self):
+        src = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://github.com/foo/bar",
+            version="1.0.0", commit="abc123", bucket="project",
+            install_mode="symlink",
+        )
+        restored = LockPackage.from_dict("foo/bar", src.to_dict())
+        assert restored.install_mode == "symlink"
+
+    def test_reads_legacy_lock_without_install_mode(self):
+        legacy = {
+            "type": "skills-pack",
+            "url": "https://github.com/foo/bar",
+            "version": "1.0.0",
+            "commit": "abc123",
+            "bucket": "project",
+            "items": [],
+        }
+        pkg = LockPackage.from_dict("foo/bar", legacy)
+        assert pkg.install_mode == "copy"
+
+    def test_rejects_unknown_install_mode(self):
+        with pytest.raises(ValueError, match="install_mode must be one of"):
+            LockPackage(
+                name="foo/bar", pkg_type="skills-pack", url="https://x",
+                version="1.0.0", commit="abc", bucket="project",
+                install_mode="hardlink",
+            )
+
+    def test_to_dict_omits_install_mode_when_default(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://x",
+            version="1.0.0", commit="abc", bucket="project",
+        )
+        d = pkg.to_dict()
+        assert "install_mode" not in d
+
+    def test_to_dict_includes_install_mode_when_non_default(self):
+        pkg = LockPackage(
+            name="foo/bar", pkg_type="skills-pack", url="https://x",
+            version="1.0.0", commit="abc", bucket="project",
+            install_mode="symlink",
+        )
+        d = pkg.to_dict()
+        assert d["install_mode"] == "symlink"

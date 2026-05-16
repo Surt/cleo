@@ -60,3 +60,5 @@ Expands each package to show all installed item paths.
 /cleo-list --verbose
 /cleo-list --json
 ```
+
+Alias: `cleo ls` is equivalent to `cleo list`.
