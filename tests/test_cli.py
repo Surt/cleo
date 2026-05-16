@@ -805,3 +805,80 @@ class TestPublishTag:
             capture_output=True, text=True, check=True,
         ).stdout.strip()
         assert tag_sha == new_head
+
+
+class TestPublishPushAndRelease:
+    def _bare_remote(self, tmp_path: Path) -> Path:
+        bare = tmp_path / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", "-b", "main", "-q", str(bare)],
+            check=True, capture_output=True,
+        )
+        return bare
+
+    def _make_pkg_with_bare_remote(self, tmp_path: Path) -> tuple[Path, Path]:
+        bare = self._bare_remote(tmp_path)
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "acme/push-test", "type": "skills-pack", "version": "0.1.0"}),
+            encoding="utf-8",
+        )
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for push/release test\n---\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "remote", "add", "origin", str(bare))
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "init")
+        _git(pkg, "tag", "v0.1.0")
+        return pkg, bare
+
+    def test_release_runs_full_chain(self, tmp_path):
+        pkg, bare = self._make_pkg_with_bare_remote(tmp_path)
+        r = run_cleo("publish", "--release", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.1.1"
+        assert _git_log_subjects(pkg)[0] == "chore(publish): v0.1.1"
+        bare_tags = subprocess.run(
+            ["git", "-C", str(bare), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "v0.1.1" in bare_tags
+        bare_main = subprocess.run(
+            ["git", "-C", str(bare), "log", "main", "--format=%s"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert "chore(publish): v0.1.1" in bare_main
+
+    def test_release_with_explicit_bump_minor(self, tmp_path):
+        pkg, _ = self._make_pkg_with_bare_remote(tmp_path)
+        r = run_cleo("publish", "--release", "--bump", "minor", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.2.0"
+
+    def test_validation_failure_short_circuits_before_git_ops(self, tmp_path):
+        pkg, bare = self._make_pkg_with_bare_remote(tmp_path)
+        (pkg / "rules" / "r.md").write_text("no frontmatter at all\n", encoding="utf-8")
+        before_log = _git_log_subjects(pkg)
+        before_tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        r = run_cleo("publish", "--release", "--package", str(pkg))
+        assert r.returncode != 0
+        assert _git_log_subjects(pkg) == before_log
+        after_tags = subprocess.run(
+            ["git", "-C", str(pkg), "tag", "--list"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        assert before_tags == after_tags
+        bare_main_exists = subprocess.run(
+            ["git", "-C", str(bare), "rev-parse", "--verify", "main"],
+            capture_output=True, text=True,
+        )
+        assert bare_main_exists.returncode != 0

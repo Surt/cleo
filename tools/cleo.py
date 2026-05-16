@@ -1217,6 +1217,13 @@ def cmd_publish(args: argparse.Namespace) -> int:
         err(f"--package {pkg_dir} is not a directory")
         return 1
 
+    if args.release:
+        if args.bump is None:
+            args.bump = "patch"
+        args.commit = True
+        args.tag = True
+        args.push = True
+
     cleo_json = pkg_dir / "cleo.json"
     existing: dict | None = None
     if cleo_json.exists():
@@ -1296,6 +1303,21 @@ def cmd_publish(args: argparse.Namespace) -> int:
             err(str(exc))
             return 1
 
+    if args.push:
+        version_for_tag = merged.get("version", "0.0.0")
+        tag = f"v{version_for_tag}"
+        branch = publish_mod._git_capture(pkg_dir, "symbolic-ref", "--short", "HEAD")
+        if not branch:
+            err("HEAD is detached — cannot push a branch ref")
+            return 1
+        try:
+            publish_mod.push(pkg_dir, args.remote, [f"HEAD:refs/heads/{branch}", tag])
+        except (RuntimeError, SecurityViolation) as exc:
+            err(str(exc))
+            return 1
+        if not args.quiet:
+            ok(f"pushed {branch} + {tag} to {args.remote}")
+
     if not args.quiet:
         ok(f"{merged['name']} {merged.get('version', '?')} [{merged.get('type')}] — validation passed")
     return 0
@@ -1374,6 +1396,12 @@ def main(argv: list[str]) -> int:
                    help="git tag vX.Y.Z on HEAD after committing")
     s.add_argument("--yes", action="store_true",
                    help="skip confirms; allow tag overwrite")
+    s.add_argument("--push", action="store_true",
+                   help="git push HEAD + the new tag to --remote")
+    s.add_argument("--release", action="store_true",
+                   help="shortcut for --bump patch --commit --tag --push")
+    s.add_argument("--remote", default="origin",
+                   help="git remote name for --push (default: origin)")
     s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)
