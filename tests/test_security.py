@@ -37,3 +37,29 @@ class TestValidatePackageManifest:
             },
             "vendor/pkg",
         )
+
+
+class TestValidatePackageManifestRejections:
+    def test_rejects_non_dict_manifest(self):
+        with pytest.raises(SecurityViolation, match="must be a JSON object"):
+            validate_package_manifest([1, 2, 3], "v/p")
+
+    def test_rejects_unknown_type(self):
+        with pytest.raises(SecurityViolation, match="unknown type"):
+            validate_package_manifest({"type": "rules-pack"}, "v/p")
+
+    def test_rejects_non_string_name(self):
+        with pytest.raises(SecurityViolation, match="must match"):
+            validate_package_manifest({"name": 123, "type": "skills-pack"}, "v/p")
+
+    def test_rejects_name_without_slash(self):
+        with pytest.raises(SecurityViolation, match="must match"):
+            validate_package_manifest(
+                {"name": "no-vendor", "type": "skills-pack"}, "v/p"
+            )
+
+    def test_rejects_name_with_path_chars(self):
+        with pytest.raises(SecurityViolation, match="must match"):
+            validate_package_manifest(
+                {"name": "../../etc/passwd", "type": "skills-pack"}, "v/p"
+            )
