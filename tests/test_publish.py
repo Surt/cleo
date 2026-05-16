@@ -117,3 +117,12 @@ class TestDetectPackage:
         d = detect_package(tmp_path)
         assert d["name"] == "acme/widgets"
         assert d["homepage"] == "https://github.com/acme/widgets"
+
+    def test_non_github_host_in_homepage(self, tmp_path):
+        (tmp_path / "rules").mkdir()
+        (tmp_path / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: x\n---\nbody\n", encoding="utf-8")
+        _init_repo(tmp_path, remote="git@gitlab.com:acme/widgets.git")
+        d = detect_package(tmp_path)
+        assert d["name"] == "acme/widgets"
+        assert d["homepage"] == "https://gitlab.com/acme/widgets"

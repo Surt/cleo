@@ -21,9 +21,9 @@ from .semver import parse_version
 
 _BUMP_LEVELS = ("patch", "minor", "major")
 
-# Parse vendor/name out of either https://host/vendor/name(.git) or git@host:vendor/name(.git)
-_REMOTE_HTTPS_RE = re.compile(r"^https?://[^/]+/([^/]+/[^/]+?)(?:\.git)?/?$")
-_REMOTE_SSH_RE = re.compile(r"^[\w.-]+@[\w.-]+:([^/]+/[^/]+?)(?:\.git)?/?$")
+# Parse host and vendor/name out of either https://host/vendor/name(.git) or git@host:vendor/name(.git)
+_REMOTE_HTTPS_RE = re.compile(r"^https?://([^/]+)/([^/]+/[^/]+?)(?:\.git)?/?$")
+_REMOTE_SSH_RE = re.compile(r"^[\w.-]+@([\w.-]+):([^/]+/[^/]+?)(?:\.git)?/?$")
 
 # Artifact dirs Claude Code understands. Mirrors COMPONENT_GLOBS in lib/checks.py
 # but here we only need the parent dir names — discover_items walks the globs
@@ -63,11 +63,12 @@ def _git_capture(pkg_dir: Path, *args: str) -> str | None:
     return r.stdout.strip() or None
 
 
-def _parse_remote(url: str) -> str | None:
+def _parse_remote(url: str) -> tuple[str, str] | None:
+    """Return (host, vendor/name) parsed from a git remote URL, or None."""
     for pat in (_REMOTE_HTTPS_RE, _REMOTE_SSH_RE):
         m = pat.match(url)
         if m:
-            return m.group(1)
+            return m.group(1), m.group(2)
     return None
 
 
@@ -101,8 +102,13 @@ def detect_package(pkg_dir: Path) -> dict:
         pkg_type = "skills-pack"
 
     remote = _git_capture(pkg_dir, "remote", "get-url", "origin")
-    name = _parse_remote(remote) if remote else None
-    homepage = f"https://github.com/{name}" if name else None
+    parsed = _parse_remote(remote) if remote else None
+    if parsed:
+        host, name = parsed
+        homepage = f"https://{host}/{name}"
+    else:
+        name = None
+        homepage = None
 
     version = _highest_tag_version(pkg_dir) or "0.0.0"
 
