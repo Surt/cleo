@@ -517,3 +517,59 @@ class TestEmptyPackageGate:
             import json as _j
             lock = _j.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
             assert "v/p" not in lock.get("packages", {})
+
+
+# ---- Security gate: bad package ref via CLI rejected ------------------------
+
+class TestPackageRefGateCLI:
+    def test_cli_require_with_traversal_pkg_ref_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo(
+            "require", "v/../../tmp/evil", "-c", "*",
+            "--repo", "file:///nonexistent",
+            "--project", str(proj),
+        )
+        assert r.returncode != 0, (
+            f"path-traversal pkg ref should be rejected; "
+            f"stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        combined = (r.stdout + r.stderr).lower()
+        assert "package reference" in combined or "vendor" in combined
+        # Nothing should be written outside the project, and the project
+        # manifest must not list the bad ref.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/../../tmp/evil" not in manifest.get("require", {})
+
+
+# ---- Security gate: bad package ref via project manifest rejected -----------
+
+class TestPackageRefGateManifest:
+    def test_install_with_traversal_key_in_manifest_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        # Hand-craft a malicious manifest.
+        (proj / "cleo.json").write_text(
+            json.dumps({
+                "name": "proj",
+                "repositories": [],
+                "require": {"v/../../tmp/evil": "*"},
+                "require-local": {},
+                "require-user": {},
+            }),
+            encoding="utf-8",
+        )
+        r = run_cleo("install", "--project", str(proj))
+        # The install should fail (or skip the bad ref with non-zero exit).
+        # At minimum: nothing under the project's .claude/ for the bad ref,
+        # and no lock entry for it.
+        bad_claude_marker = proj / ".claude" / "rules" / "cleo-v---tmp-evil-anything.md"
+        assert not bad_claude_marker.exists()
+        # Lock either absent or lacks the bad ref.
+        lock_path = proj / "cleo.lock"
+        if lock_path.exists():
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            assert "v/../../tmp/evil" not in lock.get("packages", {})
+        combined = (r.stdout + r.stderr).lower()
+        assert "package reference" in combined or "vendor" in combined

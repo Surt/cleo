@@ -48,6 +48,7 @@ from lib.security import (  # noqa: E402
     SecurityViolation,
     validate_package_has_artifacts,
     validate_package_manifest,
+    validate_package_ref,
     validate_item_source,
     validate_hook_size,
     validate_dest_item_name,
@@ -827,6 +828,11 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     for bucket, requires in buckets_to_install:
         for pkg_name, constraint in requires.items():
+            try:
+                validate_package_ref(pkg_name)
+            except SecurityViolation as exc:
+                err(f"manifest entry: {exc}")
+                continue
             existing = lock.get(pkg_name)
 
             if lock_exists and existing:
@@ -893,8 +899,11 @@ def cmd_require(args: argparse.Namespace) -> int:
     constraint = args.constraint or "*"
     repo_url = args.repo
 
-    if "/" not in pkg_ref:
-        raise SystemExit(f"{TAG} Package name must be <vendor>/<name>. Got: {pkg_ref!r}")
+    try:
+        validate_package_ref(pkg_ref)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return 1
 
     bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
 
@@ -952,6 +961,12 @@ def cmd_update(args: argparse.Namespace) -> int:
     new_lock = dict(lock)
 
     for pkg_name in sorted(target_packages):
+        try:
+            validate_package_ref(pkg_name)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            skipped += 1
+            continue
         if pkg_name not in all_requires:
             warn(f"{pkg_name} is not in {MANIFEST_FILE}")
             continue
@@ -1085,6 +1100,12 @@ def cmd_remove(args: argparse.Namespace) -> int:
     new_lock = dict(lock)
 
     for pkg_name in args.packages:
+        try:
+            validate_package_ref(pkg_name)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            not_found += 1
+            continue
         pkg = lock.get(pkg_name)
         if pkg is None:
             warn(f"{pkg_name} not installed — nothing to remove")
