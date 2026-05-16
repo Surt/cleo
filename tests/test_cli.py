@@ -1164,6 +1164,37 @@ def test_update_with_adopt_registers_untracked_skills(tmp_path, monkeypatch):
     )
 
 
+def test_update_adopt_synthesizes_safe_name_for_leading_dashes(tmp_path, monkeypatch):
+    """`_adopt_one` strips leading dashes/dots so the synthesized name is valid."""
+    import cleo as cleo_mod, json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    user_home = tmp_path / "home"
+    global_skills = user_home / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    # Skill dir with a name that filters to a leading-dash string.
+    sk = global_skills / "--weird.name"
+    sk.mkdir()
+    (sk / "SKILL.md").write_text("---\nname: weird\n---\n", encoding="utf-8")
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global", "--adopt", "--quiet",
+    ])
+    assert rc == 0
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    # Every registered name in require-user must start with [a-z0-9] in its leaf part.
+    for name in manifest.get("require-user", {}):
+        leaf = name.split("/", 1)[1]
+        assert leaf[0].isalnum(), f"leaf starts with non-alnum: {leaf!r}"
+
+
 def test_update_with_adopt_dry_run_does_not_write(tmp_path, monkeypatch, capsys):
     """`cleo update --adopt --dry-run` prints the diff but does not modify files."""
     import cleo as cleo_mod, json

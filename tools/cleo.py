@@ -250,6 +250,7 @@ def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
     # to satisfy that gate. Falls back to a generic name if nothing survives.
     safe = d.skill_name.replace("/", "-").replace(" ", "-").lower()
     safe = "".join(c for c in safe if c.isalnum() or c in "._-")
+    safe = safe.lstrip("-.")
     if not safe:
         safe = "skill"
     pkg_name = f"adopted/{safe}"
