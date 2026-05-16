@@ -67,6 +67,17 @@ Full git commit SHA the version tag resolves to.
 
 For `mcp-server` / `mixed` packages: the key added to `mcpServers` in `settings.json`. `null` for skills-only packages.
 
+#### `install_mode`
+
+`"copy"` (default) | `"symlink"` — how artifacts were materialized into `.claude/...`:
+
+- `"copy"` — files are copied from the local cache; cache updates do not affect the installed files until `cleo update` is run.
+- `"symlink"` — files are symlinked from the local cache; cache updates are immediately live without re-running install.
+
+**Backward compat:** omitted from lock files written by cleo versions before this field was introduced; treated as `"copy"` on read. Also omitted on write when the value equals the default `"copy"`.
+
+**Override:** `cleo install --symlink` overrides the locked value for that run. The overriding mode is then written back to the lock so subsequent `cleo install` runs restore the same mode.
+
 #### `items`
 
 Array of installed artifacts:
