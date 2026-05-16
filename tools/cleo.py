@@ -1208,6 +1208,11 @@ def cmd_require(args: argparse.Namespace) -> int:
             scaffold_manifest(project)
             manifest = load_manifest(project)
 
+        if args.dry_run:
+            if not args.quiet:
+                ok(f"Would add {pkg_ref} (local: {src.local_path}) (dry-run)")
+            return 0
+
         cache_dir = src.local_path
         install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
         result = _install_from_local_dir(
@@ -1220,8 +1225,7 @@ def cmd_require(args: argparse.Namespace) -> int:
         manifest_add_package(project, pkg_ref, "*", bucket, f"file://{src.local_path}")
         lock = load_lock(project)
         lock[pkg_ref] = result
-        if not args.dry_run:
-            save_lock(project, lock)
+        save_lock(project, lock)
         if not args.quiet:
             ok(f"Added {pkg_ref} (local: {src.local_path})")
         return 0

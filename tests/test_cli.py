@@ -908,6 +908,41 @@ def test_require_subdir_form_installs_only_subdir(tmp_path, monkeypatch):
     assert (skills_dir / "cleo-owner-foo-foo").exists()
 
 
+def test_require_local_path_dry_run_makes_no_changes(tmp_path, monkeypatch):
+    """`cleo require ./local-pkg --dry-run` neither installs artifacts nor mutates the manifest."""
+    import cleo as cleo_mod
+    import json
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    src_pkg = tmp_path / "local-pkg"
+    src_pkg.mkdir()
+    (src_pkg / "cleo.json").write_text(
+        '{"name":"local/local-pkg","type":"skills-pack","version":"0.0.1"}\n',
+        encoding="utf-8",
+    )
+    skill_dir = src_pkg / "skills" / "hello"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: hello\ndescription: hi\n---\nbody\n", encoding="utf-8"
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    rc = cleo_mod.main(["--project", str(project), "require", str(src_pkg), "--dry-run", "--quiet"])
+    assert rc == 0
+
+    # No artifact materialized.
+    assert not (project / ".claude" / "skills" / "cleo-local-local-pkg-hello").exists()
+
+    # Manifest entry NOT added (scaffold_manifest creates an empty require-* set; we check the bucket the install would target).
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    # Default bucket is BUCKET_PROJECT → "require"
+    assert "local/local-pkg" not in manifest.get("require", {})
+
+    # Lock file should not have been written.
+    assert not (project / "cleo.lock").exists()
+
+
 def test_require_local_path_installs_without_clone(tmp_path, monkeypatch):
     """`cleo require ./local-pkg` installs from filesystem; no git clone."""
     import cleo as cleo_mod
