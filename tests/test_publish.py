@@ -308,3 +308,52 @@ class TestValidatePublishFrontmatter:
             "#!/bin/sh\necho hi\n", encoding="utf-8")
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert errors == []
+
+
+def _commit_and_tag(pkg_dir: Path, tag: str = "v0.0.0") -> None:
+    _git(pkg_dir, "add", "-A")
+    _git(pkg_dir, "commit", "-qm", "init")
+    _git(pkg_dir, "tag", tag)
+
+
+class TestValidatePublishDryInstall:
+    def test_clean_package_passes_dry_install(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "fake-home"))
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_rule(pkg)
+        _init_repo(pkg)
+        _commit_and_tag(pkg)
+        errors = validate_publish(pkg)
+        assert errors == [], errors
+
+    def test_no_git_repo_reported(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_rule(pkg)
+        errors = validate_publish(pkg)
+        assert any("git" in e.lower() for e in errors)
+
+    def test_no_tag_reported(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_rule(pkg)
+        _init_repo(pkg)
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "no tag yet")
+        errors = validate_publish(pkg)
+        assert any("tag" in e.lower() for e in errors)
+
+    def test_dry_install_surfaces_install_failure(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "fake-home"))
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        _write_manifest(pkg, {"name": "a/b", "type": "mcp-server"})
+        _write_rule(pkg)  # rule is irrelevant when type is mcp-server
+        _init_repo(pkg)
+        _commit_and_tag(pkg)
+        errors = validate_publish(pkg)
+        assert any("mcp" in e.lower() for e in errors)

@@ -16,7 +16,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 from .checks import discover_items, parse_frontmatter
@@ -235,5 +238,87 @@ def validate_publish(pkg_dir: Path, *, skip_dry_install: bool = False) -> list[s
         has_mcp_json=mcp_json.exists(),
         pkg_type=pkg_type,
     )
+
+    if not skip_dry_install and not errors:
+        errors.extend(_dry_install(pkg_dir))
+
+    return errors
+
+
+def _file_url(path: Path) -> str:
+    return "file:///" + str(path.resolve()).replace("\\", "/")
+
+
+def _has_any_tag(pkg_dir: Path) -> bool:
+    raw = _git_capture(pkg_dir, "tag", "--list")
+    return bool(raw)
+
+
+def _is_git_repo(pkg_dir: Path) -> bool:
+    return (pkg_dir / ".git").exists()
+
+
+def _dry_install(pkg_dir: Path) -> list[str]:
+    """Run install_package against pkg_dir in a temp project; return error list."""
+    errors: list[str] = []
+
+    if not _is_git_repo(pkg_dir):
+        errors.append("not a git repository — run `git init` and tag a release before publishing")
+        return errors
+    if not _has_any_tag(pkg_dir):
+        errors.append("no git tags found — run `git tag v0.0.0` before publishing")
+        return errors
+
+    version = _highest_tag_version(pkg_dir) or "0.0.0"
+
+    pkg_name: str | None = None
+    cleo_json = pkg_dir / "cleo.json"
+    if cleo_json.exists():
+        try:
+            pkg_name = json.loads(cleo_json.read_text(encoding="utf-8")).get("name")
+        except json.JSONDecodeError:
+            pkg_name = None
+    if not pkg_name:
+        errors.append("package cleo.json missing `name` — dry install needs one")
+        return errors
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import cleo as cleo_mod  # type: ignore  # noqa: PLC0415
+
+    tmp_root = Path(tempfile.mkdtemp(prefix="cleo-publish-"))
+    try:
+        proj = tmp_root / "proj"
+        proj.mkdir()
+        proj_manifest = {
+            "name": "publish-validate",
+            "repositories": [{"type": "git", "url": _file_url(pkg_dir)}],
+            "require": {pkg_name: "*"},
+            "require-local": {},
+            "require-user": {},
+        }
+        (proj / "cleo.json").write_text(json.dumps(proj_manifest), encoding="utf-8")
+
+        import os as _os
+        prev_home = _os.environ.get("CLEO_USER_HOME")
+        _os.environ["CLEO_USER_HOME"] = str(tmp_root / "fake-home")
+        try:
+            result = cleo_mod.install_package(
+                proj,
+                pkg_name,
+                _file_url(pkg_dir),
+                "*",
+                cleo_mod.BUCKET_PROJECT,
+                quiet=True,
+            )
+        finally:
+            if prev_home is None:
+                _os.environ.pop("CLEO_USER_HOME", None)
+            else:
+                _os.environ["CLEO_USER_HOME"] = prev_home
+
+        if result is None:
+            errors.append(f"dry install of {pkg_name}@{version} failed — see prior error messages")
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
     return errors
