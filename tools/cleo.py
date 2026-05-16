@@ -880,6 +880,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     install, and write a fresh lock.
     """
     project = args.project.resolve()
+    cli_install_mode = "symlink" if getattr(args, "symlink", False) else None
     manifest = load_manifest(project)
     lock = load_lock(project)
     lock_exists = _lock_path(project).exists()
@@ -917,6 +918,7 @@ def cmd_install(args: argparse.Namespace) -> int:
                     project, pkg_name, existing.url, constraint, bucket,
                     locked_version=existing.version,
                     locked_commit=existing.commit,
+                    install_mode=cli_install_mode or existing.install_mode,
                     dry_run=args.dry_run,
                     offline=args.offline,
                     quiet=args.quiet,
@@ -936,6 +938,7 @@ def cmd_install(args: argparse.Namespace) -> int:
 
             result = install_package(
                 project, pkg_name, url, constraint, bucket,
+                install_mode=cli_install_mode or "copy",
                 dry_run=args.dry_run,
                 offline=args.offline,
                 quiet=args.quiet,
@@ -993,8 +996,10 @@ def cmd_require(args: argparse.Namespace) -> int:
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")
 
+    install_mode = "symlink" if getattr(args, "symlink", False) else "copy"
     result = install_package(
         project, pkg_ref, repo_url, constraint, bucket,
+        install_mode=install_mode,
         dry_run=args.dry_run, quiet=args.quiet,
     )
     if result is None:
@@ -1289,6 +1294,8 @@ def main(argv: list[str]) -> int:
     s = sub.add_parser("install", help="Install packages from cleo.json", parents=[common_sub])
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--offline", action="store_true")
+    s.add_argument("--symlink", action="store_true",
+                   help="Symlink artifacts from cache (live updates) instead of copying")
     s.set_defaults(fn=cmd_install)
 
     s = sub.add_parser("require", help="Add a package to cleo.json and install it", parents=[common_sub])
@@ -1297,6 +1304,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--repo", help="Git URL for the package")
     s.add_argument("--local", action="store_true")
     s.add_argument("--user", action="store_true")
+    s.add_argument("--symlink", action="store_true",
+                   help="Symlink artifacts from cache (live updates) instead of copying")
     s.add_argument("--dry-run", action="store_true")
     s.set_defaults(fn=cmd_require)
 

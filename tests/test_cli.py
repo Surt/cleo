@@ -741,6 +741,44 @@ def test_install_package_records_symlink_mode(tmp_path, monkeypatch):
     assert dst.is_symlink()
 
 
+def test_require_with_symlink_flag_symlinks_artifact(tmp_path, monkeypatch):
+    """`cleo require --symlink foo/bar` results in a symlinked artifact and install_mode=symlink in lock."""
+    import pytest, sys, json
+    if sys.platform == "win32":
+        pytest.skip("symlink mode test runs on POSIX")
+    from cleo import main, _pkg_cache_dir
+    import cleo as cleo_mod
+
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+    # Pre-seed cache so we don't need to clone.
+    cache = _pkg_cache_dir("test/pkg", "1.0.0")
+    cache.mkdir(parents=True)
+    (cache / "cleo.json").write_text(
+        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n', encoding="utf-8"
+    )
+    sd = cache / "skills" / "my-skill"
+    sd.mkdir(parents=True)
+    (sd / "SKILL.md").write_text("---\nname: my-skill\ndescription: x\n---\n", encoding="utf-8")
+
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    # Mock version resolution to avoid network.
+    monkeypatch.setattr(cleo_mod, "resolve_version", lambda url, c: ("1.0.0", "v1.0.0"))
+    monkeypatch.setattr(cleo_mod, "resolve_commit", lambda url, tag: "a" * 40)
+    monkeypatch.setattr(cleo_mod, "_clone_or_fetch",
+                         lambda url, cdir, tag, expected_commit=None: True)
+
+    rc = main(["--project", str(project), "require", "test/pkg",
+               "--repo", "https://example/test/pkg", "--symlink", "--quiet"])
+    assert rc == 0
+    dst = project / ".claude" / "skills" / "cleo-test-pkg-my-skill"
+    assert dst.is_symlink()
+
+    lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
+    assert lock["packages"]["test/pkg"]["install_mode"] == "symlink"
+
+
 def test_install_package_records_copy_mode_default(tmp_path, monkeypatch):
     """install_package defaults to install_mode='copy' and copies (not symlinks)."""
     from cleo import install_package, _pkg_cache_dir
