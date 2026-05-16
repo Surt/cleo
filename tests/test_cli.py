@@ -337,3 +337,302 @@ class TestUnicodeOutput:
         )
         # Even if individual chars get replaced, the process must not crash.
         assert result.returncode == 0, f"stderr={result.stderr}"
+
+
+# ---- Security gate: malformed manifest is rejected loudly --------------------
+
+class TestManifestSecurityGate:
+    def test_malformed_cleo_json_in_package_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # Invalid JSON in the package's cleo.json.
+        (pkg / "cleo.json").write_text("{ not json ", encoding="utf-8")
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for malformed-manifest gate test\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        combined = r.stdout + r.stderr
+        assert "cleo.json" in combined.lower() or "manifest" in combined.lower()
+        # Package must NOT be added to manifest.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})
+
+
+# ---- Security gate: symlink escape rejected ---------------------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestSymlinkEscapeGate:
+    def test_symlinked_skill_dir_pointing_outside_is_rejected(self, tmp_path):
+        # Build a "decoy" external directory whose contents would be smuggled in.
+        outside = tmp_path / "outside-target"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text(
+            "---\nname: evil\ndescription: external payload that must not be installed\n---\n\npayload\n",
+            encoding="utf-8",
+        )
+
+        pkg = tmp_path / "pkg"
+        (pkg / "skills").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # Symlink skills/evil -> ../outside-target.
+        (pkg / "skills" / "evil").symlink_to(outside, target_is_directory=True)
+
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        # Install must fail.
+        assert r.returncode != 0
+        # Project must not contain the smuggled skill.
+        assert not (proj / ".claude" / "skills" / "cleo-v-p-evil").exists()
+
+
+# ---- Security gate: oversized hooks rejected --------------------------------
+
+class TestHookSizeGate:
+    def test_oversized_hook_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        (pkg / "hooks").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # 64 KiB + 1 byte.
+        (pkg / "hooks" / "PreToolUse.sh").write_bytes(b"#" * (64 * 1024 + 1))
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        # Hook must not have been copied.
+        assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()
+
+
+# ---- Security gate: symlinked hook scripts rejected -------------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestHookSymlinkEscapeGate:
+    def test_symlinked_hook_pointing_outside_is_rejected(self, tmp_path):
+        # Build an external script the symlink would point at.
+        outside = tmp_path / "outside-payload"
+        outside.mkdir()
+        external_script = outside / "evil.sh"
+        external_script.write_text("#!/bin/sh\necho pwned\n", encoding="utf-8")
+
+        pkg = tmp_path / "pkg"
+        (pkg / "hooks").mkdir(parents=True)
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        # Symlink hooks/PreToolUse.sh -> ../outside-payload/evil.sh.
+        (pkg / "hooks" / "PreToolUse.sh").symlink_to(external_script)
+
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        # Install must fail.
+        assert r.returncode != 0
+        # Hook must NOT have been copied into the project.
+        assert not (proj / ".claude" / "hooks" / "cleo-v-p" / "PreToolUse.sh").exists()
+
+
+# ---- Security gate: empty package rejected ----------------------------------
+
+class TestEmptyPackageGate:
+    def test_package_with_no_artifacts_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # cleo.json declares type, but the repo has NO artifact dirs
+        # and NO mcp.json — just a README.
+        (pkg / "cleo.json").write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+        (pkg / "README.md").write_text("# v/p\nempty\n", encoding="utf-8")
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0, (
+            f"empty package should be rejected; got stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        # Package must NOT be in the project manifest.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})
+        # No lock file written (no successful install).
+        if (proj / "cleo.lock").exists():
+            import json as _j
+            lock = _j.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
+            assert "v/p" not in lock.get("packages", {})
+
+
+# ---- Security gate: bad package ref via CLI rejected ------------------------
+
+class TestPackageRefGateCLI:
+    def test_cli_require_with_traversal_pkg_ref_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo(
+            "require", "v/../../tmp/evil", "-c", "*",
+            "--repo", "file:///nonexistent",
+            "--project", str(proj),
+        )
+        assert r.returncode != 0, (
+            f"path-traversal pkg ref should be rejected; "
+            f"stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        combined = (r.stdout + r.stderr).lower()
+        assert "package reference" in combined or "vendor" in combined
+        # Nothing should be written outside the project, and the project
+        # manifest must not list the bad ref.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/../../tmp/evil" not in manifest.get("require", {})
+
+
+# ---- Security gate: bad package ref via project manifest rejected -----------
+
+class TestPackageRefGateManifest:
+    def test_install_with_traversal_key_in_manifest_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        # Hand-craft a malicious manifest.
+        (proj / "cleo.json").write_text(
+            json.dumps({
+                "name": "proj",
+                "repositories": [],
+                "require": {"v/../../tmp/evil": "*"},
+                "require-local": {},
+                "require-user": {},
+            }),
+            encoding="utf-8",
+        )
+        r = run_cleo("install", "--project", str(proj))
+        # The install should fail (or skip the bad ref with non-zero exit).
+        # At minimum: nothing under the project's .claude/ for the bad ref,
+        # and no lock entry for it.
+        bad_claude_marker = proj / ".claude" / "rules" / "cleo-v---tmp-evil-anything.md"
+        assert not bad_claude_marker.exists()
+        # Lock either absent or lacks the bad ref.
+        lock_path = proj / "cleo.lock"
+        if lock_path.exists():
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            assert "v/../../tmp/evil" not in lock.get("packages", {})
+        combined = (r.stdout + r.stderr).lower()
+        assert "package reference" in combined or "vendor" in combined
+
+
+# ---- Security gate: leading-dash tag/url rejected ---------------------------
+
+class TestGitRefGate:
+    def test_cli_require_with_leading_dash_url_rejected(self, tmp_path):
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        # Use = syntax so argparse passes the leading-dash value to cleo rather
+        # than treating it as a flag; this lets the security gate (not argparse)
+        # produce the rejection.
+        r = run_cleo(
+            "require", "v/p", "-c", "*",
+            "--repo=-upload-pack=evil",
+            "--project", str(proj),
+        )
+        assert r.returncode != 0, (
+            f"leading-dash URL should be rejected; "
+            f"stdout={r.stdout!r} stderr={r.stderr!r}"
+        )
+        combined = (r.stdout + r.stderr).lower()
+        assert "git ref" in combined or "leading" in combined or "potential" in combined
+
+
+# ---- Security gate: symlinked manifest files rejected -----------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestSymlinkedManifestGate:
+    def test_symlinked_cleo_json_is_rejected(self, tmp_path):
+        # The decoy "real" file lives outside the package.
+        outside = tmp_path / "outside.json"
+        outside.write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # Symlink pkg/cleo.json -> ../outside.json. The package STILL has
+        # an artifact dir so the empty-package gate doesn't pre-empt this.
+        (pkg / "cleo.json").symlink_to(outside)
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for symlinked-manifest gate test\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})

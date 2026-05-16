@@ -44,6 +44,18 @@ for _stream in (sys.stdout, sys.stderr):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.checks import discover_items, parse_frontmatter  # noqa: E402
 from lib.semver import resolve_version, resolve_commit, parse_version, matches_constraint  # noqa: E402
+from lib.security import (  # noqa: E402
+    SecurityViolation,
+    validate_dest_item_name,
+    validate_git_ref,
+    validate_hook_size,
+    validate_item_source,
+    validate_manifest_file_not_symlink,
+    validate_package_has_artifacts,
+    validate_package_manifest,
+    validate_package_ref,
+    HOOK_SIZE_MAX_BYTES,
+)
 
 LOCK_VERSION = 1
 MANIFEST_FILE = "cleo.json"
@@ -378,6 +390,12 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
     discarded and re-cloned. Guards against tag mutation and cross-test
     contamination.
     """
+    try:
+        validate_git_ref(url)
+        validate_git_ref(tag)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return False
     git_dir = cache_dir / ".git"
     if git_dir.exists():
         if expected_commit:
@@ -391,7 +409,7 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
     cache_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
-            ["git", "clone", "--depth=1", "--branch", tag, url, str(cache_dir)],
+            ["git", "clone", "--depth=1", "--branch", tag, "--", url, str(cache_dir)],
             capture_output=True, text=True,
         )
         return result.returncode == 0
@@ -399,14 +417,25 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
         return False
 
 
-def _read_package_manifest(cache_dir: Path) -> dict:
+def _read_package_manifest(cache_dir: Path) -> dict | None:
+    """Read the package's own cleo.json. Returns None if absent.
+
+    Raises SecurityViolation on malformed JSON or symlinked manifest —
+    silent fallback is unsafe because a corrupted manifest could mask a
+    tampered package, and a symlinked manifest could redirect to host
+    files outside the cache.
+    """
     p = cache_dir / "cleo.json"
+    validate_manifest_file_not_symlink(p)
     if not p.exists():
-        return {"type": "skills-pack"}
+        return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {"type": "skills-pack"}
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SecurityViolation(
+            f"package cleo.json is not valid JSON: {exc}"
+        ) from exc
+    return data
 
 
 # ---- Settings.json helpers ----------------------------------------------
@@ -482,6 +511,11 @@ def install_mcp_server(
 ) -> Optional[str]:
     """Install MCP server from mcp.json into settings.json. Returns server key or None."""
     mcp_path = cache_dir / "mcp.json"
+    try:
+        validate_manifest_file_not_symlink(mcp_path)
+    except SecurityViolation as exc:
+        err(f"{pkg_name}: {exc}")
+        return None
     if not mcp_path.exists():
         return None
     try:
@@ -526,6 +560,17 @@ def install_hooks(
     hook_scripts = list(hooks_dir.glob("*.sh"))
     if not hook_scripts:
         return []
+
+    # Pre-flight: reject the WHOLE package if any hook is oversized OR
+    # symlinks outside the cache. Done before any copy so a single bad hook
+    # doesn't leave half the package installed on disk.
+    for script in hook_scripts:
+        try:
+            validate_hook_size(script)
+            validate_item_source(script, cache_dir)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            raise
 
     safe_pkg = pkg_name.replace("/", "-")
     dest_hooks_dir = project / ".claude" / "hooks" / f"cleo-{safe_pkg}"
@@ -680,11 +725,40 @@ def install_package(
                 err(f"{name}: failed to clone from {url} at tag {tag}")
                 return None
 
-    pkg_manifest = _read_package_manifest(cache_dir) if not dry_run else {"type": "skills-pack"}
-    pkg_type = pkg_manifest.get("type", "skills-pack")
+    if not dry_run:
+        try:
+            pkg_manifest = _read_package_manifest(cache_dir)
+            validate_package_manifest(pkg_manifest, name)
+        except SecurityViolation as exc:
+            err(f"{name}: {exc}")
+            return None
+    else:
+        pkg_manifest = None
+
+    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    # Belt-and-suspenders: validate_package_manifest already rejects unknown
+    # types, but cover the dry-run / None-manifest path too.
     if pkg_type not in VALID_PKG_TYPES:
         err(f"{name}: unknown package type {pkg_type!r} (expected one of {', '.join(VALID_PKG_TYPES)})")
         return None
+
+    # Discover artifacts up front so the empty-package gate can run before
+    # anything is materialized.
+    if not dry_run:
+        items_found = discover_items(cache_dir)
+        has_mcp_json = (cache_dir / "mcp.json").exists()
+        try:
+            validate_package_has_artifacts(
+                items_count=len(items_found),
+                has_mcp_json=has_mcp_json,
+                pkg_type=pkg_type,
+            )
+        except SecurityViolation as exc:
+            err(f"{name}: {exc}")
+            return None
+    else:
+        items_found = []
+        has_mcp_json = False
 
     lock_pkg = LockPackage(
         name=name, pkg_type=pkg_type, url=url,
@@ -693,7 +767,6 @@ def install_package(
 
     # Materialize artifacts (rules/skills/agents/commands/hooks)
     if pkg_type in ("skills-pack", "mixed") and not dry_run:
-        items_found = discover_items(cache_dir)
         if bucket == BUCKET_USER:
             forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
             if forbidden:
@@ -704,7 +777,13 @@ def install_package(
         for type_, item_name, item_path in items_found:
             if type_ == "hook":
                 continue  # handled separately
-            src = _source_for_item(type_, item_name, item_path, cache_dir)
+            try:
+                validate_dest_item_name(item_name)
+                src = _source_for_item(type_, item_name, item_path, cache_dir)
+                validate_item_source(src, cache_dir)
+            except SecurityViolation as exc:
+                err(f"{name}: {exc}")
+                return None
             dst = _dest_path(project, type_, name, item_name, bucket)
             _materialize(src, dst)
             sha = sha256_artifact(dst)
@@ -713,7 +792,10 @@ def install_package(
                 ok(f"  {type_} {item_name}")
 
         # Hooks
-        hook_names = install_hooks(project, bucket, name, cache_dir, dry_run=dry_run, quiet=quiet)
+        try:
+            hook_names = install_hooks(project, bucket, name, cache_dir, dry_run=dry_run, quiet=quiet)
+        except SecurityViolation:
+            return None
         for hn in hook_names:
             lock_pkg.items.append(LockItem(type="hook", name=hn, path="", sha=""))
 
@@ -762,6 +844,11 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     for bucket, requires in buckets_to_install:
         for pkg_name, constraint in requires.items():
+            try:
+                validate_package_ref(pkg_name)
+            except SecurityViolation as exc:
+                err(f"manifest entry: {exc}")
+                continue
             existing = lock.get(pkg_name)
 
             if lock_exists and existing:
@@ -828,8 +915,11 @@ def cmd_require(args: argparse.Namespace) -> int:
     constraint = args.constraint or "*"
     repo_url = args.repo
 
-    if "/" not in pkg_ref:
-        raise SystemExit(f"{TAG} Package name must be <vendor>/<name>. Got: {pkg_ref!r}")
+    try:
+        validate_package_ref(pkg_ref)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return 1
 
     bucket = BUCKET_LOCAL if args.local else (BUCKET_USER if args.user else BUCKET_PROJECT)
 
@@ -842,6 +932,12 @@ def cmd_require(args: argparse.Namespace) -> int:
     # Resolve URL — falls back to GitHub convention automatically.
     if not repo_url:
         repo_url = _resolve_url(data, pkg_ref, None)
+
+    try:
+        validate_git_ref(repo_url)
+    except SecurityViolation as exc:
+        err(str(exc))
+        return 1
 
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")
@@ -887,6 +983,12 @@ def cmd_update(args: argparse.Namespace) -> int:
     new_lock = dict(lock)
 
     for pkg_name in sorted(target_packages):
+        try:
+            validate_package_ref(pkg_name)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            skipped += 1
+            continue
         if pkg_name not in all_requires:
             warn(f"{pkg_name} is not in {MANIFEST_FILE}")
             continue
@@ -1020,6 +1122,12 @@ def cmd_remove(args: argparse.Namespace) -> int:
     new_lock = dict(lock)
 
     for pkg_name in args.packages:
+        try:
+            validate_package_ref(pkg_name)
+        except SecurityViolation as exc:
+            err(f"{pkg_name}: {exc}")
+            not_found += 1
+            continue
         pkg = lock.get(pkg_name)
         if pkg is None:
             warn(f"{pkg_name} not installed — nothing to remove")
