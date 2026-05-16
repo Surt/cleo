@@ -1328,3 +1328,62 @@ def test_update_preserves_symlink_install_mode(tmp_path, monkeypatch):
     (sd / "SKILL.md").write_text("---\nname: x\ndescription: y\n---\n", encoding="utf-8")
     monkeypatch.setattr(cleo_mod, "_clone_or_fetch",
                         lambda url, cdir, tag, expected_commit=None: True)
+
+    rc = cleo_mod.main(["--project", str(project), "update", "--quiet"])
+    assert rc == 0
+
+    updated_lock = json.loads((project / "cleo.lock").read_text(encoding="utf-8"))
+    # The package was installed with --symlink originally; update must preserve that.
+    assert updated_lock["packages"]["test/pkg"]["install_mode"] == "symlink"
+
+
+# ---------------------------------------------------------------------------
+# Issue 2: _adopt_one does not validate d.git_remote
+# ---------------------------------------------------------------------------
+
+def test_adopt_falls_back_when_git_remote_is_invalid(tmp_path, monkeypatch, capsys):
+    """If .git/config's remote URL fails validate_git_ref, adopt as file://."""
+    if sys.platform == "win32":
+        pytest.skip("symlink requires POSIX or Windows dev-mode")
+    import cleo as cleo_mod
+    monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "home"))
+
+    # Set up a fake "git repo" with a tampered remote URL containing a null byte.
+    repo = tmp_path / "evil-checkout"
+    repo.mkdir()
+    git = repo / ".git"
+    git.mkdir()
+    # Null byte in the URL — validate_git_ref rejects this.
+    (git / "config").write_bytes(
+        b'[remote "origin"]\n    url = https://evil\x00.example/pkg.git\n'
+    )
+    skill_src = repo / "skills" / "my-skill"
+    skill_src.mkdir(parents=True)
+    (skill_src / "SKILL.md").write_text("---\nname: my-skill\n---\n", encoding="utf-8")
+
+    # Place a symlink in ~/.claude/skills/ pointing into the fake repo.
+    global_skills = tmp_path / "home" / ".claude" / "skills"
+    global_skills.mkdir(parents=True)
+    link = global_skills / "my-skill"
+    link.symlink_to(skill_src)
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "cleo.json").write_text(
+        '{"name":"proj","repositories":[],"require":{},"require-local":{},"require-user":{}}\n',
+        encoding="utf-8",
+    )
+
+    rc = cleo_mod.main([
+        "--project", str(project), "update", "--scope", "global", "--adopt",
+    ])
+    assert rc == 0
+
+    manifest = json.loads((project / "cleo.json").read_text(encoding="utf-8"))
+    # Should have been adopted via file:// since the git remote was invalid.
+    user_req = manifest.get("require-user", {})
+    assert any("my-skill" in k for k in user_req)
+    for url in user_req.values():
+        # No lock entry should use the tampered URL.
+        if not url.startswith("file://"):
+            assert "\x00" not in url

@@ -258,14 +258,26 @@ def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
     src_path = d.symlink_target if d.is_symlink and d.symlink_target else d.path
 
     if d.git_remote:
-        url = d.git_remote
-        constraint = "*"
-        lock_pkg = LockPackage(
-            name=pkg_name, pkg_type="skills-pack", url=url,
-            version="0.0.0+adopted", commit="",
-            bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
-            items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
-        )
+        try:
+            validate_git_ref(d.git_remote)
+            url = d.git_remote
+            constraint = "*"
+            lock_pkg = LockPackage(
+                name=pkg_name, pkg_type="skills-pack", url=url,
+                version="0.0.0+adopted", commit="",
+                bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+                items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+            )
+        except SecurityViolation as exc:
+            warn(f"adopt {pkg_name}: invalid git remote ({exc}); falling back to local path")
+            url = f"file://{src_path}"
+            constraint = "*"
+            lock_pkg = LockPackage(
+                name=pkg_name, pkg_type="skills-pack", url=url,
+                version="0.0.0+local", commit="0" * 40,
+                bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
+                items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
+            )
     else:
         url = f"file://{src_path}"
         constraint = "*"
