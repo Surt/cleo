@@ -344,3 +344,26 @@ def tag_at_head(pkg_dir: Path, tag: str) -> bool:
 def current_remote_url(pkg_dir: Path, remote: str) -> str | None:
     validate_git_ref(remote)
     return _git_capture(pkg_dir, "remote", "get-url", remote)
+
+
+def working_tree_dirty(pkg_dir: Path, paths: list[str]) -> bool:
+    """True if any of `paths` has uncommitted changes or is untracked."""
+    out = _git_capture(pkg_dir, "status", "--porcelain", "--", *paths)
+    return bool(out)
+
+
+def commit_file(pkg_dir: Path, path: str, message: str) -> None:
+    """Stage and commit a single file. Raise RuntimeError if nothing to commit."""
+    subprocess.run(
+        ["git", "-C", str(pkg_dir), "add", "--", path],
+        check=True, capture_output=True,
+    )
+    staged = _git_capture(pkg_dir, "diff", "--cached", "--name-only", "--", path)
+    if not staged:
+        raise RuntimeError(f"nothing to commit for {path}")
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "commit", "-m", message, "--", path],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"git commit failed: {r.stderr.strip()}")

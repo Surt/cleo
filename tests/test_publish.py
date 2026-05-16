@@ -206,7 +206,15 @@ class TestWriteManifest:
         assert text.endswith("\n")
 
 
-from lib.publish import validate_publish
+from lib.publish import commit_file, working_tree_dirty, validate_publish
+
+
+def _git_log_subject(pkg_dir: Path) -> list[str]:
+    r = subprocess.run(
+        ["git", "-C", str(pkg_dir), "log", "--format=%s"],
+        capture_output=True, text=True, check=True,
+    )
+    return r.stdout.strip().splitlines()
 
 
 def _write_manifest(pkg_dir: Path, data: dict) -> None:
@@ -401,3 +409,44 @@ class TestGitopsReadHelpers:
     def test_current_remote_url_missing(self, tmp_path):
         _init_repo(tmp_path)
         assert current_remote_url(tmp_path, "origin") is None
+
+
+class TestGitopsCommit:
+    def test_working_tree_clean(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "cleo.json").write_text('{"a": 1}', encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        assert working_tree_dirty(tmp_path, ["cleo.json"]) is False
+
+    def test_modified_file_dirty(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "cleo.json").write_text('{"a": 1}', encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        (tmp_path / "cleo.json").write_text('{"a": 2}', encoding="utf-8")
+        assert working_tree_dirty(tmp_path, ["cleo.json"]) is True
+
+    def test_untracked_file_dirty(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "cleo.json").write_text('{"a": 1}', encoding="utf-8")
+        assert working_tree_dirty(tmp_path, ["cleo.json"]) is True
+
+    def test_commit_file_creates_commit(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "README.md").write_text("x", encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        (tmp_path / "cleo.json").write_text('{"a": 1}', encoding="utf-8")
+        commit_file(tmp_path, "cleo.json", "chore(publish): v0.0.0")
+        log = _git_log_subject(tmp_path)
+        assert log[0] == "chore(publish): v0.0.0"
+        assert working_tree_dirty(tmp_path, ["cleo.json"]) is False
+
+    def test_commit_file_raises_when_nothing_to_commit(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "cleo.json").write_text('{"a": 1}', encoding="utf-8")
+        _git(tmp_path, "add", "-A")
+        _git(tmp_path, "commit", "-qm", "init")
+        with pytest.raises(RuntimeError, match="nothing to commit"):
+            commit_file(tmp_path, "cleo.json", "noop")
