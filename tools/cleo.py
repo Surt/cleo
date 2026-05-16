@@ -70,6 +70,7 @@ LOCAL_TYPES = {"rule", "skill", "agent", "command"}
 USER_TYPES = {"rule", "skill", "agent", "command"}
 
 VALID_PKG_TYPES = ("skills-pack", "mcp-server", "mixed")
+VALID_INSTALL_MODES = ("copy", "symlink")
 
 DEST_BY_TYPE = {
     "rule":    (Path(".claude/rules"),    ".md"),
@@ -283,6 +284,12 @@ class LockPackage:
     mcp_server_key: Optional[str] = None
     install_mode: str = "copy"  # "copy" | "symlink"
 
+    def __post_init__(self) -> None:
+        if self.install_mode not in VALID_INSTALL_MODES:
+            raise ValueError(
+                f"install_mode must be one of {VALID_INSTALL_MODES}, got {self.install_mode!r}"
+            )
+
     def to_dict(self) -> dict:
         d: dict = {
             "type": self.pkg_type,
@@ -290,11 +297,12 @@ class LockPackage:
             "version": self.version,
             "commit": self.commit,
             "bucket": self.bucket,
-            "install_mode": self.install_mode,
             "items": [{"type": i.type, "name": i.name, "path": i.path, "sha": i.sha} for i in self.items],
         }
         if self.mcp_server_key:
             d["mcp_server_key"] = self.mcp_server_key
+        if self.install_mode != "copy":
+            d["install_mode"] = self.install_mode
         return d
 
     @classmethod
