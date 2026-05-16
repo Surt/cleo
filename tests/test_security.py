@@ -95,3 +95,45 @@ class TestValidateDestItemName:
     def test_rejects_null_byte(self):
         with pytest.raises(SecurityViolation, match="null byte"):
             validate_dest_item_name("evil\x00name")
+
+
+from lib.security import validate_item_source
+
+
+class TestValidateItemSource:
+    def test_normal_path_inside_cache(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        item = cache / "skills" / "s" / "SKILL.md"
+        item.parent.mkdir(parents=True)
+        item.write_text("body")
+        validate_item_source(item, cache)
+
+    def test_directory_source_inside_cache(self, tmp_path):
+        cache = tmp_path / "cache"
+        skill_dir = cache / "skills" / "s"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("body")
+        validate_item_source(skill_dir, cache)
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                         reason="symlink creation needs admin on Windows")
+    def test_rejects_symlink_escaping_cache(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "evil.md").write_text("payload")
+        link = cache / "skills" / "evil"
+        link.parent.mkdir(parents=True)
+        link.symlink_to(outside)
+        with pytest.raises(SecurityViolation, match="outside the package"):
+            validate_item_source(link, cache)
+
+    def test_rejects_source_outside_cache_via_relative(self, tmp_path):
+        cache = tmp_path / "cache"
+        cache.mkdir()
+        outside_file = tmp_path / "outside.md"
+        outside_file.write_text("payload")
+        with pytest.raises(SecurityViolation, match="outside the package"):
+            validate_item_source(outside_file, cache)

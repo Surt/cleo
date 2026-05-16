@@ -7,6 +7,7 @@ converts to a CLI error.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 
 class SecurityViolation(Exception):
@@ -56,3 +57,25 @@ def validate_dest_item_name(name: str) -> None:
         )
     if name in (".", ".."):
         raise SecurityViolation(f"item name {name!r} is a reserved path token")
+
+
+def validate_item_source(src: Path, cache_root: Path) -> None:
+    """Refuse to materialize items whose real path escapes the cache root.
+
+    Symlinks pointing outside the package are the main attack vector here —
+    shutil.copytree/copy2 follow them silently. Resolve both paths and
+    require containment.
+    """
+    try:
+        real_src = src.resolve(strict=True)
+        real_cache = cache_root.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise SecurityViolation(
+            f"cannot resolve source path {src}: {exc}"
+        ) from exc
+    try:
+        real_src.relative_to(real_cache)
+    except ValueError:
+        raise SecurityViolation(
+            f"source {src} resolves outside the package cache ({real_src})"
+        ) from None
