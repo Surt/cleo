@@ -259,3 +259,29 @@ class TestValidateGitRef:
     def test_rejects_newline(self):
         with pytest.raises(SecurityViolation, match="newline"):
             validate_git_ref("v1.0\nmalicious")
+
+
+import stat as _stat
+from lib.security import validate_manifest_file_not_symlink
+
+
+class TestValidateManifestFileNotSymlink:
+    def test_regular_file_ok(self, tmp_path):
+        p = tmp_path / "cleo.json"
+        p.write_text("{}")
+        validate_manifest_file_not_symlink(p)
+
+    def test_missing_file_ok(self, tmp_path):
+        # Caller is expected to handle absence separately; the validator
+        # only complains about the symlink case.
+        validate_manifest_file_not_symlink(tmp_path / "missing.json")
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                         reason="symlink creation needs admin on Windows")
+    def test_symlink_rejected(self, tmp_path):
+        target = tmp_path / "real.json"
+        target.write_text("{}")
+        link = tmp_path / "cleo.json"
+        link.symlink_to(target)
+        with pytest.raises(SecurityViolation, match="symlink"):
+            validate_manifest_file_not_symlink(link)

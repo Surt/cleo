@@ -596,3 +596,43 @@ class TestGitRefGate:
         )
         combined = (r.stdout + r.stderr).lower()
         assert "git ref" in combined or "leading" in combined or "potential" in combined
+
+
+# ---- Security gate: symlinked manifest files rejected -----------------------
+
+@pytest.mark.skipif(sys.platform == "win32",
+                     reason="symlink creation needs admin on Windows")
+class TestSymlinkedManifestGate:
+    def test_symlinked_cleo_json_is_rejected(self, tmp_path):
+        # The decoy "real" file lives outside the package.
+        outside = tmp_path / "outside.json"
+        outside.write_text(
+            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # Symlink pkg/cleo.json -> ../outside.json. The package STILL has
+        # an artifact dir so the empty-package gate doesn't pre-empt this.
+        (pkg / "cleo.json").symlink_to(outside)
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for symlinked-manifest gate test\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})

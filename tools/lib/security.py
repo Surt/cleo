@@ -7,6 +7,7 @@ converts to a CLI error.
 from __future__ import annotations
 
 import re
+import stat
 from pathlib import Path
 
 
@@ -152,4 +153,21 @@ def validate_git_ref(value: str) -> None:
     if value.startswith("-"):
         raise SecurityViolation(
             f"git ref {value!r} has leading '-' (potential arg injection)"
+        )
+
+
+def validate_manifest_file_not_symlink(path: Path) -> None:
+    """Refuse to read package metadata files that are symlinks.
+
+    cleo.json and mcp.json get `read_text` which follows symlinks. A
+    symlinked manifest could redirect to host files. Missing files are
+    fine — the caller decides whether absence is an error.
+    """
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(st.st_mode):
+        raise SecurityViolation(
+            f"manifest file {path.name} is a symlink — refusing to follow"
         )

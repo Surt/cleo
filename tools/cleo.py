@@ -46,13 +46,14 @@ from lib.checks import discover_items, parse_frontmatter  # noqa: E402
 from lib.semver import resolve_version, resolve_commit, parse_version, matches_constraint  # noqa: E402
 from lib.security import (  # noqa: E402
     SecurityViolation,
+    validate_dest_item_name,
     validate_git_ref,
+    validate_hook_size,
+    validate_item_source,
+    validate_manifest_file_not_symlink,
     validate_package_has_artifacts,
     validate_package_manifest,
     validate_package_ref,
-    validate_item_source,
-    validate_hook_size,
-    validate_dest_item_name,
     HOOK_SIZE_MAX_BYTES,
 )
 
@@ -419,10 +420,13 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
 def _read_package_manifest(cache_dir: Path) -> dict | None:
     """Read the package's own cleo.json. Returns None if absent.
 
-    Raises SecurityViolation on malformed JSON — silent fallback is unsafe
-    because a corrupted manifest could mask a tampered package.
+    Raises SecurityViolation on malformed JSON or symlinked manifest —
+    silent fallback is unsafe because a corrupted manifest could mask a
+    tampered package, and a symlinked manifest could redirect to host
+    files outside the cache.
     """
     p = cache_dir / "cleo.json"
+    validate_manifest_file_not_symlink(p)
     if not p.exists():
         return None
     try:
@@ -507,6 +511,11 @@ def install_mcp_server(
 ) -> Optional[str]:
     """Install MCP server from mcp.json into settings.json. Returns server key or None."""
     mcp_path = cache_dir / "mcp.json"
+    try:
+        validate_manifest_file_not_symlink(mcp_path)
+    except SecurityViolation as exc:
+        err(f"{pkg_name}: {exc}")
+        return None
     if not mcp_path.exists():
         return None
     try:
