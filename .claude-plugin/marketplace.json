@@ -1,0 +1,14 @@
+{
+  "name": "cleo",
+  "homepage": "https://github.com/Surt/cleo",
+  "owner": {
+    "name": "Erik Wiesenthal"
+  },
+  "plugins": [
+    {
+      "name": "cleo",
+      "description": "npm for MCP servers + Claude skills — dependency manager for the Claude ecosystem",
+      "source": "./plugin"
+    }
+  ]
+}
