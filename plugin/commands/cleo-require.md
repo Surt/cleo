@@ -8,7 +8,20 @@ scope: generic
 
 Add a package to `cleo.json` and install it. Args: `$ARGUMENTS`.
 
-Syntax: `/cleo-require <vendor/package>[@<constraint>] [--local] [--user] [--repo <url>] [--dry-run]`
+Syntax: `/cleo-require <source>[@<constraint>] [--local] [--user] [--repo <url>] [--symlink] [--dry-run]`
+
+`<source>` accepts any of:
+
+| Form | Example |
+| --- | --- |
+| GitHub shorthand | `vendor/pkg` |
+| Full HTTPS URL | `https://github.com/vendor/pkg` |
+| Subdirectory URL | `https://github.com/vendor/pkg/tree/<ref>/<subpath>` |
+| GitLab URL | `https://gitlab.com/org/repo` |
+| SSH git URL | `git@github.com:vendor/pkg.git` |
+| Local path | `./relative` or `/absolute` |
+
+`--repo` is still accepted but prefer the positional source form above.
 
 ## Locate the engine
 
@@ -22,8 +35,9 @@ Abort with install instructions if engine missing (same message as `/cleo-instal
 ## Parse arguments
 
 From `$ARGUMENTS`:
-- `<vendor/package>[@<constraint>]` — required. Constraint defaults to `*` if omitted.
-- `--repo <url>` — optional. Git URL for the package repo. Required if the package is not in the registry.
+- `<source>[@<constraint>]` — required. Accepts github shorthand, full URL, subdir URL, gitlab URL, SSH URL, or local path. Constraint defaults to `*` if omitted.
+- `--repo <url>` — optional (legacy). Prefer passing the URL as the positional source instead.
+- `--symlink` — symlink installed files from the package cache rather than copying them.
 - `--local` — install into local bucket (gitignored, this repo only). Rules only in `--local` mode.
 - `--user` — install into user bucket (`~/.claude/`, all repos on machine).
 - `--dry-run` — show what would change, make no changes.
@@ -31,7 +45,10 @@ From `$ARGUMENTS`:
 Examples:
 - `/cleo-require acme/cleo-example` → `*` constraint, project bucket
 - `/cleo-require acme/cleo-example@^1.0` → semver constraint
-- `/cleo-require acme/cleo-example --repo https://github.com/acme/cleo-example`
+- `/cleo-require https://github.com/acme/cleo-example` → full URL form
+- `/cleo-require git@github.com:acme/cleo-example.git` → SSH URL form
+- `/cleo-require ./local-skills` → local path form
+- `/cleo-require acme/cleo-example --symlink` → symlink from cache
 - `/cleo-require user/my-rules --local --repo https://github.com/user/my-rules`
 
 ## Validate the ref
@@ -46,7 +63,7 @@ Example: /cleo-require acme/cleo-example --repo https://github.com/acme/cleo-exa
 ## Run the engine
 
 ```bash
-$PY require <vendor/package> [--constraint <constraint>] [--local|--user] [--repo <url>] [--dry-run]
+$PY require <source> [--constraint <constraint>] [--local|--user] [--repo <url>] [--symlink] [--dry-run]
 ```
 
 The engine:
@@ -89,9 +106,13 @@ Inform the user: `[cleo/require] Created cleo.json.`
 ## Examples
 
 ```
-/cleo-require acme/cleo-generic --repo https://github.com/acme/cleo-generic
-/cleo-require acme/cleo-example@^1.0 --repo https://github.com/acme/cleo-example
-/cleo-require acme/cleo-mcp-example --repo https://github.com/acme/cleo-mcp-example
+/cleo-require acme/cleo-generic
+/cleo-require https://github.com/acme/cleo-generic
+/cleo-require acme/cleo-example@^1.0
+/cleo-require https://github.com/acme/cleo-example/tree/main/skills/my-skill
+/cleo-require git@github.com:acme/cleo-mcp-example.git
+/cleo-require ./local-skills
 /cleo-require user/my-rules --local --repo https://github.com/user/my-rules
+/cleo-require acme/cleo-generic --symlink
 /cleo-require acme/cleo-generic --dry-run
 ```
