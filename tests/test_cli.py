@@ -693,3 +693,31 @@ class TestPublishBare:
         r = run_cleo("publish", "--package", str(pkg))
         assert r.returncode != 0
         assert "artifact" in (r.stdout + r.stderr).lower()
+
+
+class TestPublishBump:
+    def _make_pkg(self, pkg: Path):
+        TestPublishBare()._make_publishable_pkg(pkg)
+
+    def test_bump_patch(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "patch", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.1.1"
+
+    def test_bump_minor(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "minor", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "0.2.0"
+
+    def test_bump_major(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "major", "--package", str(pkg))
+        assert r.returncode == 0, r.stderr
+        assert json.loads((pkg / "cleo.json").read_text())["version"] == "1.0.0"
+
+    def test_bump_rejects_unknown_level(self, tmp_path):
+        pkg = tmp_path / "pkg"; self._make_pkg(pkg)
+        r = run_cleo("publish", "--bump", "weird", "--package", str(pkg))
+        assert r.returncode != 0

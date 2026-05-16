@@ -1233,6 +1233,16 @@ def cmd_publish(args: argparse.Namespace) -> int:
             "configure an origin remote matching <vendor>/<name>")
         return 1
 
+    if args.bump:
+        current = merged.get("version", "0.0.0")
+        try:
+            merged["version"] = publish_mod.bump_version(current, args.bump)
+        except ValueError as exc:
+            err(str(exc))
+            return 1
+        if not args.quiet:
+            info(f"bumped version {current} → {merged['version']}")
+
     changed = publish_mod.write_manifest(pkg_dir, merged)
     if changed and not args.quiet:
         info(f"refreshed {pkg_dir / 'cleo.json'}")
@@ -1313,6 +1323,8 @@ def main(argv: list[str]) -> int:
                        parents=[common_sub])
     s.add_argument("--package", type=Path, default=Path.cwd(),
                    help="Path to the package repo (default: cwd)")
+    s.add_argument("--bump", choices=["patch", "minor", "major"], default=None,
+                   help="Bump version in cleo.json before validating")
     s.set_defaults(fn=cmd_publish)
 
     args = p.parse_args(argv)
