@@ -44,6 +44,14 @@ for _stream in (sys.stdout, sys.stderr):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from lib.checks import discover_items, parse_frontmatter  # noqa: E402
 from lib.semver import resolve_version, resolve_commit, parse_version, matches_constraint  # noqa: E402
+from lib.security import (  # noqa: E402
+    SecurityViolation,
+    validate_package_manifest,
+    validate_item_source,
+    validate_hook_size,
+    validate_dest_item_name,
+    HOOK_SIZE_MAX_BYTES,
+)
 
 LOCK_VERSION = 1
 MANIFEST_FILE = "cleo.json"
@@ -399,14 +407,22 @@ def _clone_or_fetch(url: str, cache_dir: Path, tag: str, *, expected_commit: Opt
         return False
 
 
-def _read_package_manifest(cache_dir: Path) -> dict:
+def _read_package_manifest(cache_dir: Path) -> dict | None:
+    """Read the package's own cleo.json. Returns None if absent.
+
+    Raises SecurityViolation on malformed JSON — silent fallback is unsafe
+    because a corrupted manifest could mask a tampered package.
+    """
     p = cache_dir / "cleo.json"
     if not p.exists():
-        return {"type": "skills-pack"}
+        return None
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {"type": "skills-pack"}
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SecurityViolation(
+            f"package cleo.json is not valid JSON: {exc}"
+        ) from exc
+    return data
 
 
 # ---- Settings.json helpers ----------------------------------------------
@@ -680,8 +696,19 @@ def install_package(
                 err(f"{name}: failed to clone from {url} at tag {tag}")
                 return None
 
-    pkg_manifest = _read_package_manifest(cache_dir) if not dry_run else {"type": "skills-pack"}
-    pkg_type = pkg_manifest.get("type", "skills-pack")
+    if not dry_run:
+        try:
+            pkg_manifest = _read_package_manifest(cache_dir)
+            validate_package_manifest(pkg_manifest, name)
+        except SecurityViolation as exc:
+            err(f"{name}: {exc}")
+            return None
+    else:
+        pkg_manifest = None
+
+    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    # Belt-and-suspenders: validate_package_manifest already rejects unknown
+    # types, but cover the dry-run / None-manifest path too.
     if pkg_type not in VALID_PKG_TYPES:
         err(f"{name}: unknown package type {pkg_type!r} (expected one of {', '.join(VALID_PKG_TYPES)})")
         return None

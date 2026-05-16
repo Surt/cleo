@@ -337,3 +337,36 @@ class TestUnicodeOutput:
         )
         # Even if individual chars get replaced, the process must not crash.
         assert result.returncode == 0, f"stderr={result.stderr}"
+
+
+# ---- Security gate: malformed manifest is rejected loudly --------------------
+
+class TestManifestSecurityGate:
+    def test_malformed_cleo_json_in_package_is_rejected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        # Invalid JSON in the package's cleo.json.
+        (pkg / "cleo.json").write_text("{ not json ", encoding="utf-8")
+        (pkg / "rules").mkdir()
+        (pkg / "rules" / "r.md").write_text(
+            "---\nname: r\ndescription: smoke rule for malformed-manifest gate test\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        _git(pkg, "init", "-q", "-b", "main")
+        _git(pkg, "config", "user.email", "t@t.t")
+        _git(pkg, "config", "user.name", "t")
+        _git(pkg, "add", "-A")
+        _git(pkg, "commit", "-qm", "v1")
+        _git(pkg, "tag", "v1.0.0")
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/p", "-c", "^1.0",
+                     "--repo", file_url(pkg), "--project", str(proj))
+        assert r.returncode != 0
+        combined = r.stdout + r.stderr
+        assert "cleo.json" in combined.lower() or "manifest" in combined.lower()
+        # Package must NOT be added to manifest.
+        manifest = json.loads((proj / "cleo.json").read_text(encoding="utf-8"))
+        assert "v/p" not in manifest.get("require", {})
