@@ -27,6 +27,12 @@ class TestValidatePackageManifest:
     def test_minimal_manifest_is_valid(self):
         validate_package_manifest({"type": "bundle"}, "v/p")
 
+    def test_accepts_mixed_case_name(self):
+        # Same regex as validate_package_ref — mixed case allowed in the
+        # manifest's name field (it's informational; the consumer's ref is
+        # the source of truth and is normalized separately).
+        validate_package_manifest({"name": "Surt/Foo", "type": "bundle"}, "v/p")
+
     def test_full_valid_manifest(self):
         validate_package_manifest(
             {
@@ -196,10 +202,23 @@ from lib.security import validate_package_ref
 
 
 class TestValidatePackageRef:
-    def test_valid_ref(self):
-        validate_package_ref("vendor/pkg")
-        validate_package_ref("v/p")
-        validate_package_ref("my-vendor/my.pkg_name")
+    def test_valid_ref_returns_lowercase(self):
+        assert validate_package_ref("vendor/pkg") == "vendor/pkg"
+        assert validate_package_ref("v/p") == "v/p"
+        assert validate_package_ref("my-vendor/my.pkg_name") == "my-vendor/my.pkg_name"
+
+    def test_accepts_mixed_case_and_normalizes(self):
+        # GitHub URLs preserve display case; cleo accepts them and returns
+        # a lowercased canonical form so cleo.json / cleo.lock / cache stay
+        # consistent and case-insensitive.
+        assert validate_package_ref("Surt/Cleo-Plan-Then-Doc") == "surt/cleo-plan-then-doc"
+        assert validate_package_ref("SURT/FOO") == "surt/foo"
+        assert validate_package_ref("Vendor/Pkg") == "vendor/pkg"
+
+    def test_normalization_is_idempotent(self):
+        once = validate_package_ref("Mixed/Case")
+        twice = validate_package_ref(once)
+        assert once == twice == "mixed/case"
 
     def test_rejects_empty(self):
         with pytest.raises(SecurityViolation, match="empty"):
@@ -218,10 +237,6 @@ class TestValidatePackageRef:
     def test_rejects_leading_dash(self):
         with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
             validate_package_ref("-evil/p")
-
-    def test_rejects_uppercase(self):
-        with pytest.raises(SecurityViolation, match="<vendor>/<name>"):
-            validate_package_ref("Vendor/Pkg")
 
     def test_rejects_extra_slash(self):
         with pytest.raises(SecurityViolation, match="<vendor>/<name>"):

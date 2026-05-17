@@ -16,7 +16,7 @@ class SecurityViolation(Exception):
 
 
 VALID_PKG_TYPES = frozenset({"bundle", "mcp-server", "mixed"})
-_PKG_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$")
+_PKG_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def validate_package_manifest(manifest: dict | None, expected_name: str) -> None:
@@ -42,7 +42,7 @@ def validate_package_manifest(manifest: dict | None, expected_name: str) -> None
         if not isinstance(name, str) or not _PKG_NAME_RE.match(name):
             raise SecurityViolation(
                 f"package name {name!r} must match "
-                f"<vendor>/<name> with [a-z0-9._-] chars only"
+                f"<vendor>/<name> with [A-Za-z0-9._-] chars only"
             )
 
 
@@ -125,12 +125,19 @@ def validate_package_has_artifacts(
         )
 
 
-def validate_package_ref(ref: str) -> None:
-    """Validate a package reference (`<vendor>/<name>`) before it touches paths.
+def validate_package_ref(ref: str) -> str:
+    """Validate a package reference and return its canonical (lowercased) form.
 
-    Catches CLI-supplied and project-manifest-supplied package names that
-    would escape the cache directory via `..` segments, or pass a value
-    starting with `-` into a later git subprocess.
+    Accepts mixed case so users can paste GitHub URLs unchanged (GitHub
+    preserves display case in URLs). The returned string is lowercase so
+    cleo.json keys, cleo.lock keys, and cache paths stay consistent and
+    case-insensitive across consumers — every caller should reassign:
+
+        pkg_ref = validate_package_ref(pkg_ref)
+
+    Beyond casing, this catches CLI-supplied and manifest-supplied names
+    that would escape the cache directory via `..` segments, or pass a
+    value starting with `-` into a later git subprocess.
 
     Uses the same regex as validate_package_manifest's `name` field check —
     references and manifest names share the same shape.
@@ -140,8 +147,9 @@ def validate_package_ref(ref: str) -> None:
     if not _PKG_NAME_RE.match(ref):
         raise SecurityViolation(
             f"package reference {ref!r} must match <vendor>/<name> "
-            f"with [a-z0-9._-] chars only"
+            f"with [A-Za-z0-9._-] chars only"
         )
+    return ref.lower()
 
 
 def validate_git_ref(value: str) -> None:

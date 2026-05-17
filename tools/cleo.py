@@ -1138,7 +1138,7 @@ def cmd_install(args: argparse.Namespace) -> int:
     for bucket, requires in buckets_to_install:
         for pkg_name, constraint in requires.items():
             try:
-                validate_package_ref(pkg_name)
+                pkg_name = validate_package_ref(pkg_name)
             except SecurityViolation as exc:
                 err(f"manifest entry: {exc}")
                 continue
@@ -1221,7 +1221,7 @@ def cmd_require(args: argparse.Namespace) -> int:
     if src.kind == SourceKind.GIT_SUBDIR:
         pkg_ref = src.name
         try:
-            validate_package_ref(pkg_ref)
+            pkg_ref = validate_package_ref(pkg_ref)
             validate_git_ref(src.url)
         except SecurityViolation as exc:
             err(str(exc))
@@ -1264,7 +1264,7 @@ def cmd_require(args: argparse.Namespace) -> int:
     if src.kind == SourceKind.LOCAL_PATH:
         pkg_ref = src.name
         try:
-            validate_package_ref(pkg_ref)
+            pkg_ref = validate_package_ref(pkg_ref)
         except SecurityViolation as exc:
             err(str(exc))
             return 1
@@ -1299,7 +1299,7 @@ def cmd_require(args: argparse.Namespace) -> int:
     repo_url = explicit_repo or src.url
 
     try:
-        validate_package_ref(pkg_ref)
+        pkg_ref = validate_package_ref(pkg_ref)
     except SecurityViolation as exc:
         err(str(exc))
         return 1
@@ -1398,7 +1398,12 @@ def cmd_update(args: argparse.Namespace) -> int:
     all_requires: dict[str, tuple[str, str]] = {}
     for bucket, key in [(BUCKET_PROJECT, "require"), (BUCKET_LOCAL, "require-local"), (BUCKET_USER, "require-user")]:
         for name, constraint in manifest.get(key, {}).items():
-            all_requires[name] = (constraint, bucket)
+            try:
+                normalized = validate_package_ref(name)
+            except SecurityViolation as exc:
+                err(f"manifest entry: {exc}")
+                continue
+            all_requires[normalized] = (constraint, bucket)
 
     target_packages = set(args.packages) if args.packages else set(all_requires)
 
@@ -1407,7 +1412,7 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     for pkg_name in sorted(target_packages):
         try:
-            validate_package_ref(pkg_name)
+            pkg_name = validate_package_ref(pkg_name)
         except SecurityViolation as exc:
             err(f"{pkg_name}: {exc}")
             skipped += 1
@@ -1610,7 +1615,7 @@ def cmd_remove(args: argparse.Namespace) -> int:
 
     for pkg_name in args.packages:
         try:
-            validate_package_ref(pkg_name)
+            pkg_name = validate_package_ref(pkg_name)
         except SecurityViolation as exc:
             err(f"{pkg_name}: {exc}")
             not_found += 1
