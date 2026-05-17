@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "cleo",
-      "description": "npm for MCP servers + Claude skills — dependency manager for the Claude ecosystem",
+      "description": "Dependency manager for Claude Code — install rules, skills, agents, commands, hooks, and MCP servers via cleo.json + lockfile",
       "source": "./plugin"
     }
   ]

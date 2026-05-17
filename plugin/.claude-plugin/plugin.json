@@ -1,11 +1,24 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "cleo",
-  "description": "npm for MCP servers + Claude skills — install/require/update/list commands",
-  "version": "0.1.0",
+  "description": "Dependency manager for Claude Code — install rules, skills, agents, commands, hooks, and MCP servers via cleo.json + lockfile",
+  "version": "0.2.1",
   "author": {
-    "name": "Erik Wiesenthal"
+    "name": "Erik Wiesenthal",
+    "url": "https://github.com/Surt"
   },
   "license": "GPL-3.0-or-later",
   "homepage": "https://github.com/Surt/cleo",
-  "repository": "https://github.com/Surt/cleo"
+  "repository": "https://github.com/Surt/cleo",
+  "keywords": [
+    "dependency-manager",
+    "package-manager",
+    "skills",
+    "rules",
+    "agents",
+    "hooks",
+    "mcp",
+    "lockfile",
+    "team"
+  ]
 }
