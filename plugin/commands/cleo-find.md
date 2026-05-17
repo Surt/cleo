@@ -34,7 +34,7 @@ Local-only — does NOT query a remote index.
 ```
 [cleo/find] 2 matches for "style"
 
-  acme/cleo-example          matched: rule description ("style patterns")
+  Surt/cleo-plan-then-doc          matched: rule description ("style patterns")
   acme/cleo-generic          matched: skill name ("style-conventions")
 ```
 

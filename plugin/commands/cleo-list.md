@@ -34,7 +34,7 @@ Markdown table, one row per installed package:
 | --------------------------- | ----------- | ------- | ------- | ------- | ----- |
 | acme/cleo-mcp-example       | mcp-server  | 2.2.0   | abc123f | project | 1 rule + MCP |
 | acme/cleo-generic           | bundle | 1.2.0   | def456a | project | 3 rules, 1 skill |
-| acme/cleo-example           | bundle | 1.0.0   | 789abcd | project | 4 rules |
+| Surt/cleo-plan-then-doc           | bundle | 1.0.0   | 789abcd | project | 4 rules |
 ```
 
 ## Output (--verbose)

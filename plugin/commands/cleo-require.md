@@ -43,12 +43,12 @@ From `$ARGUMENTS`:
 - `--dry-run` — show what would change, make no changes.
 
 Examples:
-- `/cleo-require acme/cleo-example` → `*` constraint, project bucket
-- `/cleo-require acme/cleo-example@^1.0` → semver constraint
-- `/cleo-require https://github.com/acme/cleo-example` → full URL form
-- `/cleo-require git@github.com:acme/cleo-example.git` → SSH URL form
+- `/cleo-require Surt/cleo-plan-then-doc` → `*` constraint, project bucket
+- `/cleo-require Surt/cleo-plan-then-doc@^1.0` → semver constraint
+- `/cleo-require https://github.com/Surt/cleo-plan-then-doc` → full URL form
+- `/cleo-require git@github.com:Surt/cleo-plan-then-doc.git` → SSH URL form
 - `/cleo-require ./local-skills` → local path form
-- `/cleo-require acme/cleo-example --symlink` → symlink from cache
+- `/cleo-require Surt/cleo-plan-then-doc --symlink` → symlink from cache
 - `/cleo-require user/my-rules --local --repo https://github.com/user/my-rules`
 
 ## Validate the ref
@@ -57,7 +57,7 @@ If `vendor/package` does not contain a `/`, abort:
 
 ```
 [cleo/require] Package name must be in <vendor>/<name> format.
-Example: /cleo-require acme/cleo-example --repo https://github.com/acme/cleo-example
+Example: /cleo-require Surt/cleo-plan-then-doc --repo https://github.com/Surt/cleo-plan-then-doc
 ```
 
 ## Run the engine
@@ -76,13 +76,13 @@ The engine:
 ## Output
 
 ```
-[cleo/require] Added acme/cleo-example@^1.0 → resolved 1.2.0
+[cleo/require] Added Surt/cleo-plan-then-doc@^1.0 → resolved 1.2.0
 
 Installed:
-  acme/cleo-example  1.2.0  [bundle]
-    .claude/rules/cleo-acme-cleo-example-style-patterns.md
-    .claude/rules/cleo-acme-cleo-example-style-conventions.md
-    .claude/skills/cleo-acme-cleo-example-scaffold/
+  Surt/cleo-plan-then-doc  1.2.0  [bundle]
+    .claude/rules/cleo-surt-cleo-plan-then-doc-style-patterns.md
+    .claude/rules/cleo-surt-cleo-plan-then-doc-style-conventions.md
+    .claude/skills/cleo-surt-cleo-plan-then-doc-scaffold/
 
 Next: commit cleo.json and cleo.lock.
 ```
@@ -108,8 +108,8 @@ Inform the user: `[cleo/require] Created cleo.json.`
 ```
 /cleo-require acme/cleo-generic
 /cleo-require https://github.com/acme/cleo-generic
-/cleo-require acme/cleo-example@^1.0
-/cleo-require https://github.com/acme/cleo-example/tree/main/skills/my-skill
+/cleo-require Surt/cleo-plan-then-doc@^1.0
+/cleo-require https://github.com/Surt/cleo-plan-then-doc/tree/main/skills/my-skill
 /cleo-require git@github.com:acme/cleo-mcp-example.git
 /cleo-require ./local-skills
 /cleo-require user/my-rules --local --repo https://github.com/user/my-rules

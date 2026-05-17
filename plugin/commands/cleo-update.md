@@ -43,7 +43,7 @@ The engine:
 If a managed file was hand-edited (local SHA diverged from lock SHA), skip it and warn:
 
 ```
-[cleo/update] warn: acme/cleo-example — .claude/rules/cleo-acme-cleo-example-style-patterns.md was hand-edited.
+[cleo/update] warn: Surt/cleo-plan-then-doc — .claude/rules/cleo-surt-cleo-plan-then-doc-style-patterns.md was hand-edited.
 Skipping. Re-run with --force to overwrite.
 ```
 
@@ -55,7 +55,7 @@ Skipping. Re-run with --force to overwrite.
 [cleo/update] updated=1 already-current=2 skipped=0
 
 Updated:
-  acme/cleo-example  1.0.0 → 1.2.0
+  Surt/cleo-plan-then-doc  1.0.0 → 1.2.0
     3 rules refreshed
 
 Already current:
@@ -75,9 +75,9 @@ Already current:
 
 ```
 /cleo-update
-/cleo-update acme/cleo-example
+/cleo-update Surt/cleo-plan-then-doc
 /cleo-update --dry-run
-/cleo-update acme/cleo-example acme/cleo-generic
+/cleo-update Surt/cleo-plan-then-doc acme/cleo-generic
 /cleo-update --adopt
 /cleo-update --adopt --scope project
 /cleo-update --adopt --dry-run

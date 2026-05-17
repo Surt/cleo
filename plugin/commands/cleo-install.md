@@ -59,7 +59,7 @@ The engine prints one line per package as it works. After completion, surface a 
 
 Installed:
   acme/cleo-generic   1.2.0  [bundle]  3 rules, 1 skill
-  acme/cleo-example   1.0.0  [bundle]  4 rules
+  Surt/cleo-plan-then-doc   1.0.0  [bundle]  4 rules
 
 Updated:
   acme/cleo-mcp-example  2.1.0 → 2.2.0  [mcp-server]  MCP key: cleo-acme-cleo-mcp-example

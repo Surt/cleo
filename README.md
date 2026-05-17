@@ -22,10 +22,10 @@ Each package installs into one of three scopes:
 - **User** — out-of-tree (`~/.claude/`), just you across every repo on this machine
 
 ```bash
-cleo require acme/cleo-example        # fetches from github.com/acme/cleo-example
+cleo require Surt/cleo-plan-then-doc  # fetches from github.com/Surt/cleo-plan-then-doc
 cleo install                          # install everything from cleo.json (lock-strict)
 cleo update                           # update to latest matching versions
-cleo remove acme/cleo-example         # uninstall + clean up
+cleo remove Surt/cleo-plan-then-doc   # uninstall + clean up
 ```
 
 No registration. No central server. `vendor/name` resolves to `github.com/vendor/name` automatically.
@@ -62,15 +62,15 @@ Windows: add `cleo.cmd` to PATH instead.
 The fastest path is to ask cleo to do it. From inside a Claude Code session:
 
 ```
-/cleo-require acme/cleo-example
+/cleo-require Surt/cleo-plan-then-doc
 ```
 
 Or from the terminal:
 
 ```bash
-cleo require acme/cleo-example          # latest matching tag
-cleo require acme/cleo-example@^1.0     # with a version constraint
-cleo require acme/cleo-example --local  # gitignored, this repo only
+cleo require Surt/cleo-plan-then-doc          # latest matching tag
+cleo require Surt/cleo-plan-then-doc@^0.1     # with a version constraint
+cleo require Surt/cleo-plan-then-doc --local  # gitignored, this repo only
 ```
 
 On first run, cleo scaffolds `cleo.json` for you if none exists, resolves the latest matching tag, fetches the package, copies its content into `.claude/`, and writes `cleo.lock`. After that:
@@ -78,7 +78,7 @@ On first run, cleo scaffolds `cleo.json` for you if none exists, resolves the la
 ```bash
 cleo update     # bump matching versions
 cleo list       # see what's installed
-cleo remove acme/cleo-example
+cleo remove Surt/cleo-plan-then-doc
 ```
 
 Teammates clone the repo + run `cleo install` (or `/cleo-install`) and get the exact same state from `cleo.lock`.
@@ -159,11 +159,11 @@ cleo is a drop-in replacement. Nothing you've installed gets thrown away, no com
 
 | Form | Example |
 |---|---|
-| GitHub shorthand | `cleo require acme/cleo-example` |
-| Full git URL | `cleo require https://github.com/acme/cleo-example` |
+| GitHub shorthand | `cleo require Surt/cleo-plan-then-doc` |
+| Full git URL | `cleo require https://github.com/Surt/cleo-plan-then-doc` |
 | GitHub subdir (one folder of a repo) | `cleo require https://github.com/vercel-labs/skills/tree/main/skills/playwright` |
 | GitLab URL | `cleo require https://gitlab.com/org/repo` |
-| SSH URL | `cleo require git@github.com:acme/cleo-example.git` |
+| SSH URL | `cleo require git@github.com:Surt/cleo-plan-then-doc.git` |
 | Local path | `cleo require ./my-skills` |
 
 **Symlink mode.** `cleo require <src> --symlink` links from the package cache instead of copying — handy when authoring a skill in another working tree (mirrors `npx skills --symlink`).
