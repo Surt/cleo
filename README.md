@@ -4,9 +4,22 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
-**npm · pip · composer · cargo — for MCP servers + Claude skills.**
+**npm · pip · composer · cargo — for everything that goes in `.claude/`.**
 
-cleo is a dependency manager for the Claude ecosystem. One manifest file, one command — install rules, skills, agents, commands, hooks, and MCP server configs across your whole team.
+cleo is a dependency manager for the Claude ecosystem. One manifest, one command, and your whole team gets the same setup:
+
+- **Rules** — `CLAUDE.md` / `.claude/rules/`
+- **Skills** — `SKILL.md` directories
+- **Agents** — subagent definitions
+- **Slash commands**
+- **Hooks** — tool-event scripts
+- **MCP server configs**
+
+Each package installs into one of three scopes:
+
+- **Project** — committed to the repo, shared with your whole team
+- **Local** — gitignored, just you in this repo
+- **User** — out-of-tree (`~/.claude/`), just you across every repo on this machine
 
 > **Status:** early — feedback welcome. API and manifest format may change before `v1.0`.
 
