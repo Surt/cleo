@@ -7,6 +7,53 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-05-17
+
+### Added
+- `cleo publish` — refresh a package's `cleo.json`, validate it, and optionally `--bump` / `--commit` / `--tag` / `--push` / `--release`
+- `/cleo-publish` slash command
+- `cleo update --adopt` — register skills installed by other tools (via `file://` or git remote) into `cleo.json` + `cleo.lock`
+- `cleo update --scope` — limit adoption scan to a single bucket
+- `cleo find <query>` — local substring search over installed packages (name, items, descriptions)
+- `/cleo-find` slash command
+- `add` / `ls` / `rm` aliases for `require` / `list` / `remove` (CLI + slash commands)
+- `--symlink` flag on `install` and `require` — install artifacts as symlinks into the package cache; atomic replacement; copy fallback when symlinks unsupported
+- `install_mode` field in `cleo.lock` (`copy` default, `symlink` when chosen)
+- Local-path source form for `require` (no clone)
+- Subdirectory source form via git sparse-checkout
+- Positional `source` argument on `require` (URL or shorthand)
+- Source-form parser supporting six shapes (vendor/pkg, full URL, local path, subdir, etc.)
+- Security spec at `spec/security.md`, linked from README
+
+### Changed
+- Package type renamed `package` → `bundle`
+- Mixed-case package refs accepted at every entry point; normalized to lowercase
+- README rewrites surface full artifact + scope coverage upfront; vercel-labs/skills migration section added
+
+### Fixed
+- `cleo update`: preserve `install_mode` when re-resolving a package
+- `cleo update --adopt`: validate git remote URL before persisting to lock
+- `cleo update --adopt`: strip leading dashes/dots from synthesized package names
+- `cleo require --dry-run`: honored for the local-path source form
+- `cleo install`: atomic symlink replacement when a symlink already exists at the destination
+- `cleo publish`: derive `homepage` host from the git remote URL
+
+## [0.2.0] — 2026-05-16
+
+Phase 1 security firewall. Every package ref, manifest, artifact path, and hook script now passes through hard gates before any filesystem write.
+
+### Added — security gates
+- `validate_package_ref` — reject path traversal, leading dashes, and invalid characters at every CLI and manifest entry point
+- `validate_dest_item_name` — path-escape guard for destination filenames
+- `validate_package_manifest` — reject malformed `cleo.json` at install time
+- `validate_git_ref` — block argument injection in git invocations; `--` separators added to all git calls
+- Symlink-escape rejection — refuse symlinks pointing outside the package cache (covers hooks too)
+- Symlinked `cleo.json` and `mcp.json` refused
+- Non-regular artifact sources rejected (FIFOs, devices, etc.)
+- 64 KiB cap on hook scripts
+- Packages shipping zero artifacts rejected
+- Four hard gates documented in `spec/security.md`
+
 ## [0.1.0] — 2026-05-16
 
 First public release.
@@ -55,5 +102,7 @@ First public release.
 ### License
 - GPL-3.0-or-later. SPDX identifier in `tools/cleo.py`. Copyright © 2026 Erik Wiesenthal.
 
-[Unreleased]: https://github.com/Surt/cleo/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Surt/cleo/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Surt/cleo/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Surt/cleo/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Surt/cleo/releases/tag/v0.1.0
