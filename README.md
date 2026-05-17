@@ -133,6 +133,32 @@ cleo resolves `vendor/name` in this order:
 2. Matching entry in `repositories`
 3. `https://github.com/vendor/name` (default convention)
 
+### Coming from `vercel-labs/skills`?
+
+cleo is a drop-in replacement. Nothing you've installed gets thrown away, no commands need to be re-learned, and switching back is one `git checkout` away.
+
+- **Your existing skills stay put.** `cleo update --adopt` scans `.claude/skills/` (project) and `~/.claude/skills/` (global), finds the directories you installed with `npx skills`, and registers them in `cleo.json` + `cleo.lock`. Nothing is moved, copied, or rewritten. Add `--scope project|global|both` to narrow it, `--dry-run` to preview.
+- **Same source forms.** Every URL or path you'd hand `npx skills` works with `cleo require` (table below).
+- **Same `--symlink` mode.** `cleo require <src> --symlink` links from the package cache instead of copying — same dev-loop ergonomics.
+- **Files land in the same place.** Skills under `.claude/skills/`, rules under `.claude/rules/`, etc. — cleo doesn't invent a new layout. The only difference is the `cleo-<vendor>-<pkg>-` prefix on installed names so cleo can tell its files apart from yours.
+- **No lock-in.** `cleo remove` uninstalls cleanly. Delete `cleo.json` + `cleo.lock` and you're back to whatever you had before.
+- **What you gain.** Teammates run `cleo install` and get the same state. Version constraints, lock file, and three scope buckets (project / gitignored / user-global) replace ad-hoc `git clone` + manual copy.
+
+`cleo require` accepts:
+
+| Form | Example |
+|---|---|
+| GitHub shorthand | `cleo require acme/cleo-example` |
+| Full git URL | `cleo require https://github.com/acme/cleo-example` |
+| GitHub subdir (one folder of a repo) | `cleo require https://github.com/vercel-labs/skills/tree/main/skills/playwright` |
+| GitLab URL | `cleo require https://gitlab.com/org/repo` |
+| SSH URL | `cleo require git@github.com:acme/cleo-example.git` |
+| Local path | `cleo require ./my-skills` |
+
+**Symlink mode.** `cleo require <src> --symlink` links from the package cache instead of copying — handy when authoring a skill in another working tree (mirrors `npx skills --symlink`).
+
+**Adopt skills already on disk.** If `.claude/skills/` has SKILL.md directories cleo doesn't yet track, `cleo update --adopt` registers them into `cleo.json` + `cleo.lock` so they survive a fresh clone. `--scope project|global|both` narrows the scan; `--dry-run` previews the diff.
+
 ### Commands
 
 | Command | Description |
