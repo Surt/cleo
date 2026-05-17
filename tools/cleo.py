@@ -70,7 +70,7 @@ ALL_BUCKETS = (BUCKET_PROJECT, BUCKET_LOCAL, BUCKET_USER)
 LOCAL_TYPES = {"rule", "skill", "agent", "command"}
 USER_TYPES = {"rule", "skill", "agent", "command"}
 
-VALID_PKG_TYPES = ("skills-pack", "mcp-server", "mixed")
+VALID_PKG_TYPES = ("bundle", "mcp-server", "mixed")
 VALID_INSTALL_MODES = ("copy", "symlink")
 
 DEST_BY_TYPE = {
@@ -264,7 +264,7 @@ def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
             url = d.git_remote
             constraint = "*"
             lock_pkg = LockPackage(
-                name=pkg_name, pkg_type="skills-pack", url=url,
+                name=pkg_name, pkg_type="bundle", url=url,
                 version="0.0.0+adopted", commit="",
                 bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
                 items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
@@ -274,7 +274,7 @@ def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
             url = f"file://{src_path}"
             constraint = "*"
             lock_pkg = LockPackage(
-                name=pkg_name, pkg_type="skills-pack", url=url,
+                name=pkg_name, pkg_type="bundle", url=url,
                 version="0.0.0+local", commit="0" * 40,
                 bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
                 items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
@@ -283,7 +283,7 @@ def _adopt_one(project: Path, d, *, dry_run: bool, quiet: bool) -> None:
         url = f"file://{src_path}"
         constraint = "*"
         lock_pkg = LockPackage(
-            name=pkg_name, pkg_type="skills-pack", url=url,
+            name=pkg_name, pkg_type="bundle", url=url,
             version="0.0.0+local", commit="0" * 40,
             bucket=BUCKET_USER, install_mode="symlink" if d.is_symlink else "copy",
             items=[LockItem(type="skill", name=d.skill_name, path=str(d.path), sha="")],
@@ -340,7 +340,7 @@ class LockItem:
 @dataclass
 class LockPackage:
     name: str
-    pkg_type: str  # skills-pack | mcp-server | mixed
+    pkg_type: str  # bundle | mcp-server | mixed
     url: str
     version: str
     commit: str
@@ -374,7 +374,7 @@ class LockPackage:
     def from_dict(cls, name: str, d: dict) -> "LockPackage":
         return cls(
             name=name,
-            pkg_type=d.get("type", "skills-pack"),
+            pkg_type=d.get("type", "bundle"),
             url=d.get("url", ""),
             version=d.get("version", ""),
             commit=d.get("commit", ""),
@@ -572,7 +572,7 @@ def _clone_or_fetch_subdir(
         cleo_json.write_text(
             json.dumps({
                 "name": synth_name,
-                "type": "skills-pack",
+                "type": "bundle",
                 "description": f"Subdir install: {subpath}",
             }, indent=2) + "\n",
             encoding="utf-8",
@@ -929,7 +929,7 @@ def install_package(
     else:
         pkg_manifest = None
 
-    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    pkg_type = (pkg_manifest or {}).get("type", "bundle")
     # Belt-and-suspenders: validate_package_manifest already rejects unknown
     # types, but cover the dry-run / None-manifest path too.
     if pkg_type not in VALID_PKG_TYPES:
@@ -961,7 +961,7 @@ def install_package(
     )
 
     # Materialize artifacts (rules/skills/agents/commands/hooks)
-    if pkg_type in ("skills-pack", "mixed") and not dry_run:
+    if pkg_type in ("bundle", "mixed") and not dry_run:
         if bucket == BUCKET_USER:
             forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
             if forbidden:
@@ -1034,7 +1034,7 @@ def _install_from_local_dir(
         err(f"{name}: {exc}")
         return None
 
-    pkg_type = (pkg_manifest or {}).get("type", "skills-pack")
+    pkg_type = (pkg_manifest or {}).get("type", "bundle")
     if pkg_type not in VALID_PKG_TYPES:
         err(f"{name}: unknown package type {pkg_type!r}")
         return None
@@ -1057,7 +1057,7 @@ def _install_from_local_dir(
         install_mode=install_mode,
     )
 
-    if pkg_type in ("skills-pack", "mixed"):
+    if pkg_type in ("bundle", "mixed"):
         if bucket == BUCKET_USER:
             forbidden = sorted({t for t, _, _ in items_found if t not in USER_TYPES})
             if forbidden:

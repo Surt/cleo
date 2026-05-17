@@ -45,7 +45,7 @@ def run_cleo(*args, cwd=None, env_extra=None):
     )
 
 
-def make_pkg(pkg_root: Path, name: str, version: str, pkg_type: str = "skills-pack",
+def make_pkg(pkg_root: Path, name: str, version: str, pkg_type: str = "bundle",
              with_rule: bool = True, with_mcp: bool = False) -> None:
     """Create a fake cleo package git repo with one tagged version."""
     pkg_root.mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ class TestUnknownPackageType:
 class TestCheckDetectsDrift:
     def test_modified_file_reported(self, tmp_path):
         pkg = tmp_path / "pkg"
-        make_pkg(pkg, "v/p", "1.0.0", pkg_type="skills-pack")
+        make_pkg(pkg, "v/p", "1.0.0", pkg_type="bundle")
         proj = tmp_path / "proj"
         proj.mkdir()
         run_cleo("init", "--project", str(proj))
@@ -163,7 +163,7 @@ class TestCacheCommitVerification:
         cache_home = tmp_path / "fake-home"
 
         pkg = tmp_path / "pkg"
-        make_pkg(pkg, "v/p", "1.0.0", pkg_type="skills-pack")
+        make_pkg(pkg, "v/p", "1.0.0", pkg_type="bundle")
         proj = tmp_path / "proj"
         proj.mkdir()
         run_cleo("init", "--project", str(proj))
@@ -208,7 +208,7 @@ class TestLocalBucketGitignore:
         pkg = tmp_path / "pkg"
         pkg.mkdir()
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         for sub, fname in [("rules", "r.md"), ("agents", "a.md"), ("commands", "c.md")]:
@@ -273,7 +273,7 @@ class TestLocalBucketGitignore:
         pkg = tmp_path / "pkg"
         pkg.mkdir()
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         (pkg / "rules").mkdir()
@@ -309,7 +309,7 @@ class TestUserBucketHookGuard:
         pkg = tmp_path / "pkg"
         pkg.mkdir()
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         (pkg / "hooks").mkdir()
@@ -402,7 +402,7 @@ class TestSymlinkEscapeGate:
         pkg = tmp_path / "pkg"
         (pkg / "skills").mkdir(parents=True)
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         # Symlink skills/evil -> ../outside-target.
@@ -433,7 +433,7 @@ class TestHookSizeGate:
         pkg = tmp_path / "pkg"
         (pkg / "hooks").mkdir(parents=True)
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         # 64 KiB + 1 byte.
@@ -470,7 +470,7 @@ class TestHookSymlinkEscapeGate:
         pkg = tmp_path / "pkg"
         (pkg / "hooks").mkdir(parents=True)
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         # Symlink hooks/PreToolUse.sh -> ../outside-payload/evil.sh.
@@ -503,7 +503,7 @@ class TestEmptyPackageGate:
         # cleo.json declares type, but the repo has NO artifact dirs
         # and NO mcp.json — just a README.
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
         (pkg / "README.md").write_text("# v/p\nempty\n", encoding="utf-8")
@@ -624,7 +624,7 @@ class TestSymlinkedManifestGate:
         # The decoy "real" file lives outside the package.
         outside = tmp_path / "outside.json"
         outside.write_text(
-            json.dumps({"name": "v/p", "type": "skills-pack", "version": "1.0.0"}),
+            json.dumps({"name": "v/p", "type": "bundle", "version": "1.0.0"}),
             encoding="utf-8",
         )
 
@@ -730,7 +730,7 @@ def test_install_package_records_symlink_mode(tmp_path, monkeypatch):
     cache = _pkg_cache_dir(name, version)
     cache.mkdir(parents=True)
     (cache / "cleo.json").write_text(
-        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n',
+        '{"name":"test/pkg","type":"bundle","version":"1.0.0"}\n',
         encoding="utf-8",
     )
     skill_dir = cache / "skills" / "my-skill"
@@ -766,7 +766,7 @@ def test_require_with_symlink_flag_symlinks_artifact(tmp_path, monkeypatch):
     cache = _pkg_cache_dir("test/pkg", "1.0.0")
     cache.mkdir(parents=True)
     (cache / "cleo.json").write_text(
-        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n', encoding="utf-8"
+        '{"name":"test/pkg","type":"bundle","version":"1.0.0"}\n', encoding="utf-8"
     )
     sd = cache / "skills" / "my-skill"
     sd.mkdir(parents=True)
@@ -801,7 +801,7 @@ def test_install_package_records_copy_mode_default(tmp_path, monkeypatch):
     cache = _pkg_cache_dir(name, version)
     cache.mkdir(parents=True)
     (cache / "cleo.json").write_text(
-        '{"name":"test/pkg","type":"skills-pack","version":"1.0.0"}\n',
+        '{"name":"test/pkg","type":"bundle","version":"1.0.0"}\n',
         encoding="utf-8",
     )
     skill_dir = cache / "skills" / "my-skill"
@@ -836,7 +836,7 @@ class TestRequireSources:
             captured["url"] = url
             cdir.mkdir(parents=True, exist_ok=True)
             (cdir / "cleo.json").write_text(
-                '{"name":"test/foo","type":"skills-pack","version":"1.0.0"}\n',
+                '{"name":"test/foo","type":"bundle","version":"1.0.0"}\n',
                 encoding="utf-8",
             )
             sd = cdir / "skills" / "x"
@@ -899,7 +899,7 @@ def test_require_subdir_form_installs_only_subdir(tmp_path, monkeypatch):
         )
         # cleo.json synthesized at cache root by the implementation.
         (cdir / "cleo.json").write_text(
-            '{"name":"owner/foo","type":"skills-pack","version":"1.0.0"}\n',
+            '{"name":"owner/foo","type":"bundle","version":"1.0.0"}\n',
             encoding="utf-8",
         )
         return True
@@ -925,7 +925,7 @@ def test_require_local_path_dry_run_makes_no_changes(tmp_path, monkeypatch):
     src_pkg = tmp_path / "local-pkg"
     src_pkg.mkdir()
     (src_pkg / "cleo.json").write_text(
-        '{"name":"local/local-pkg","type":"skills-pack","version":"0.0.1"}\n',
+        '{"name":"local/local-pkg","type":"bundle","version":"0.0.1"}\n',
         encoding="utf-8",
     )
     skill_dir = src_pkg / "skills" / "hello"
@@ -959,7 +959,7 @@ def test_require_local_path_installs_without_clone(tmp_path, monkeypatch):
     src_pkg = tmp_path / "local-pkg"
     src_pkg.mkdir()
     (src_pkg / "cleo.json").write_text(
-        '{"name":"local/local-pkg","type":"skills-pack","version":"0.0.1"}\n',
+        '{"name":"local/local-pkg","type":"bundle","version":"0.0.1"}\n',
         encoding="utf-8",
     )
     skill_dir = src_pkg / "skills" / "hello"
@@ -1043,13 +1043,13 @@ def test_find_matches_description_substring(tmp_path, monkeypatch, capsys):
         "generated": "2026-05-16T00:00:00Z",
         "packages": {
             "ven/foo-pkg": {
-                "type": "skills-pack", "url": "https://x", "version": "1.0.0",
+                "type": "bundle", "url": "https://x", "version": "1.0.0",
                 "commit": "a" * 40, "bucket": "project", "items": [
                     {"type": "skill", "name": "do-foo", "path": "/tmp/foo", "sha": ""}
                 ],
             },
             "ven/bar-pkg": {
-                "type": "skills-pack", "url": "https://y", "version": "1.0.0",
+                "type": "bundle", "url": "https://y", "version": "1.0.0",
                 "commit": "b" * 40, "bucket": "project", "items": [
                     {"type": "skill", "name": "do-bar", "path": "/tmp/bar", "sha": ""}
                 ],
@@ -1308,7 +1308,7 @@ def test_update_preserves_symlink_install_mode(tmp_path, monkeypatch):
         "generated": "x",
         "packages": {
             "test/pkg": {
-                "type": "skills-pack",
+                "type": "bundle",
                 "url": "https://example/test/pkg",
                 "version": "1.0.0",
                 "commit": "a" * 40,
@@ -1329,7 +1329,7 @@ def test_update_preserves_symlink_install_mode(tmp_path, monkeypatch):
     cache = cleo_mod._pkg_cache_dir("test/pkg", "1.1.0")
     cache.mkdir(parents=True, exist_ok=True)
     (cache / "cleo.json").write_text(
-        '{"name":"test/pkg","type":"skills-pack","version":"1.1.0"}\n', encoding="utf-8"
+        '{"name":"test/pkg","type":"bundle","version":"1.1.0"}\n', encoding="utf-8"
     )
     sd = cache / "skills" / "x"
     sd.mkdir(parents=True)
@@ -1422,14 +1422,14 @@ class TestPublishBare:
         assert r.returncode == 0, r.stderr
         data = json.loads((pkg / "cleo.json").read_text(encoding="utf-8"))
         assert data["name"] == "acme/widgets"
-        assert data["type"] == "skills-pack"
+        assert data["type"] == "bundle"
         assert data["version"] == "0.1.0"
 
     def test_bare_preserves_existing_description(self, tmp_path):
         pkg = tmp_path / "pkg"
         self._make_publishable_pkg(pkg)
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "acme/widgets", "type": "skills-pack",
+            json.dumps({"name": "acme/widgets", "type": "bundle",
                         "version": "0.1.0", "description": "hand-written"}),
             encoding="utf-8",
         )
@@ -1572,7 +1572,7 @@ class TestPublishPushAndRelease:
         pkg = tmp_path / "pkg"
         pkg.mkdir()
         (pkg / "cleo.json").write_text(
-            json.dumps({"name": "acme/push-test", "type": "skills-pack", "version": "0.1.0"}),
+            json.dumps({"name": "acme/push-test", "type": "bundle", "version": "0.1.0"}),
             encoding="utf-8",
         )
         (pkg / "rules").mkdir()

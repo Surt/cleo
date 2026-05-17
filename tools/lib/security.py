@@ -15,7 +15,7 @@ class SecurityViolation(Exception):
     """Raised when a package fails a hard security gate."""
 
 
-VALID_PKG_TYPES = frozenset({"skills-pack", "mcp-server", "mixed"})
+VALID_PKG_TYPES = frozenset({"bundle", "mcp-server", "mixed"})
 _PKG_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$")
 
 
@@ -110,7 +110,7 @@ def validate_package_has_artifacts(
     wrong repo or an unfinished package. Refusing to install is friendlier
     than silently writing an empty lock entry.
     """
-    if pkg_type == "skills-pack" and items_count == 0:
+    if pkg_type == "bundle" and items_count == 0:
         raise SecurityViolation(
             "package has no recognized artifacts (rules/, skills/, agents/, "
             "commands/, hooks/) — is this the right repo?"

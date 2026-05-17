@@ -2,7 +2,7 @@
 
 Any git repository with at least one semver tag and a recognized artifact directory (`rules/`, `skills/`, `agents/`, `commands/`, `hooks/`, or `mcp.json`) is a cleo package. No registration required for URL-based installs.
 
-A `cleo.json` at the root is **recommended** (declares `type`, enables `mcp-server` / `mixed` packages, and gives consumers metadata to read), but optional. Repos without one are treated as `type: skills-pack` with no extra metadata.
+A `cleo.json` at the root is **recommended** (declares `type`, enables `mcp-server` / `mixed` packages, and gives consumers metadata to read), but optional. Repos without one are treated as `type: bundle` with no extra metadata.
 
 ## Based on Claude Code's official surfaces
 
@@ -47,7 +47,7 @@ Only the directories you need. A package with only `rules/` is perfectly valid.
 ```json
 {
   "name": "vendor/my-package",
-  "type": "skills-pack",
+  "type": "bundle",
   "version": "1.0.0",
   "description": "Short description of what this package provides",
   "homepage": "https://github.com/vendor/my-package"
@@ -59,12 +59,12 @@ Only the directories you need. A package with only `rules/` is perfectly valid.
 | Field | Required | Description |
 |---|---|---|
 | `name` | recommended | `<vendor>/<name>` — must be unique across packages users install together |
-| `type` | recommended | `skills-pack` \| `mcp-server` \| `mixed`. Defaults to `skills-pack` if absent. `mcp-server` / `mixed` require this field (cleo only wires MCP servers when `type` declares it). |
+| `type` | recommended | `bundle` \| `mcp-server` \| `mixed`. Defaults to `bundle` if absent. `mcp-server` / `mixed` require this field (cleo only wires MCP servers when `type` declares it). |
 | `version` | recommended | Current semver version (informational — cleo uses git tags) |
 | `description` | recommended | One-line description |
 | `homepage` | optional | Link to docs or repo |
 
-> **Note.** If `cleo.json` is missing, cleo treats the repo as `type: skills-pack` and installs whatever artifact directories it finds. Any `mcp.json` present will be ignored (no `type` to declare `mcp-server` / `mixed`).
+> **Note.** If `cleo.json` is missing, cleo treats the repo as `type: bundle` and installs whatever artifact directories it finds. Any `mcp.json` present will be ignored (no `type` to declare `mcp-server` / `mixed`).
 
 ## Versioning
 

@@ -116,7 +116,7 @@ def detect_package(pkg_dir: Path) -> dict:
     elif has_mcp:
         pkg_type = "mcp-server"
     else:
-        pkg_type = "skills-pack"
+        pkg_type = "bundle"
 
     remote = _git_capture(pkg_dir, "remote", "get-url", "origin")
     parsed = _parse_remote(remote) if remote else None
@@ -232,7 +232,7 @@ def validate_publish(pkg_dir: Path, *, skip_dry_install: bool = False) -> list[s
             if not isinstance(val, str) or not val.strip():
                 errors.append(f"{item_path.name}: missing or empty frontmatter field {required!r}")
 
-    pkg_type = (manifest_data or {}).get("type", "skills-pack")
+    pkg_type = (manifest_data or {}).get("type", "bundle")
     _gate(
         errors, validate_package_has_artifacts,
         items_count=len(items),

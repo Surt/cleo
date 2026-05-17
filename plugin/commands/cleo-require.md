@@ -79,7 +79,7 @@ The engine:
 [cleo/require] Added acme/cleo-example@^1.0 → resolved 1.2.0
 
 Installed:
-  acme/cleo-example  1.2.0  [skills-pack]
+  acme/cleo-example  1.2.0  [bundle]
     .claude/rules/cleo-acme-cleo-example-style-patterns.md
     .claude/rules/cleo-acme-cleo-example-style-conventions.md
     .claude/skills/cleo-acme-cleo-example-scaffold/

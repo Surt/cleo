@@ -62,7 +62,7 @@ class TestDetectPackage:
             "---\nname: r\ndescription: x\n---\nbody\n", encoding="utf-8")
         _init_repo(tmp_path, remote="https://github.com/acme/widgets.git")
         d = detect_package(tmp_path)
-        assert d["type"] == "skills-pack"
+        assert d["type"] == "bundle"
         assert d["name"] == "acme/widgets"
         assert d["homepage"] == "https://github.com/acme/widgets"
 
@@ -131,47 +131,47 @@ class TestDetectPackage:
 
 class TestMergeManifest:
     def test_no_existing_uses_all_detected(self):
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": "https://github.com/a/b"}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": "https://github.com/a/b"}
         merged = merge_manifest(None, detected)
         assert merged == detected
 
     def test_existing_name_wins(self):
         existing = {"name": "x/y"}
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": None}
         merged = merge_manifest(existing, detected)
         assert merged["name"] == "x/y"
 
     def test_existing_type_wins(self):
         existing = {"type": "mixed"}
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": None}
         merged = merge_manifest(existing, detected)
         assert merged["type"] == "mixed"
 
     def test_existing_version_wins(self):
         existing = {"version": "5.0.0"}
-        detected = {"name": "a/b", "type": "skills-pack", "version": "1.2.3", "homepage": None}
+        detected = {"name": "a/b", "type": "bundle", "version": "1.2.3", "homepage": None}
         merged = merge_manifest(existing, detected)
         assert merged["version"] == "5.0.0"
 
     def test_existing_description_preserved(self):
         existing = {"description": "hand-written"}
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": None}
         merged = merge_manifest(existing, detected)
         assert merged["description"] == "hand-written"
 
     def test_description_absent_when_not_in_existing(self):
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": None}
         merged = merge_manifest(None, detected)
         assert "description" not in merged
 
     def test_homepage_existing_wins(self):
         existing = {"homepage": "https://example.com"}
-        detected = {"name": "a/b", "type": "skills-pack", "version": "0.0.0", "homepage": "https://github.com/a/b"}
+        detected = {"name": "a/b", "type": "bundle", "version": "0.0.0", "homepage": "https://github.com/a/b"}
         merged = merge_manifest(existing, detected)
         assert merged["homepage"] == "https://example.com"
 
     def test_none_fields_in_detected_omitted(self):
-        detected = {"name": None, "type": "skills-pack", "version": "0.0.0", "homepage": None}
+        detected = {"name": None, "type": "bundle", "version": "0.0.0", "homepage": None}
         merged = merge_manifest(None, detected)
         assert "name" not in merged
         assert "homepage" not in merged
@@ -179,20 +179,20 @@ class TestMergeManifest:
 
 class TestWriteManifest:
     def test_creates_file_when_absent(self, tmp_path):
-        changed = write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        changed = write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         assert changed is True
         loaded = _json.loads((tmp_path / "cleo.json").read_text(encoding="utf-8"))
-        assert loaded == {"name": "a/b", "type": "skills-pack"}
+        assert loaded == {"name": "a/b", "type": "bundle"}
 
     def test_returns_false_when_identical(self, tmp_path):
-        data = {"name": "a/b", "type": "skills-pack"}
+        data = {"name": "a/b", "type": "bundle"}
         write_manifest(tmp_path, data)
         changed = write_manifest(tmp_path, data)
         assert changed is False
 
     def test_returns_true_when_field_added(self, tmp_path):
         write_manifest(tmp_path, {"name": "a/b"})
-        changed = write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        changed = write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         assert changed is True
 
     def test_returns_true_when_value_changes(self, tmp_path):
@@ -231,13 +231,13 @@ def _write_rule(pkg_dir: Path, name: str = "r", description: str = "x") -> None:
 
 class TestValidatePublishSecurityGates:
     def test_clean_package_no_errors(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         _write_rule(tmp_path)
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert errors == []
 
     def test_bad_manifest_name_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "BAD NAME", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "BAD NAME", "type": "bundle"})
         _write_rule(tmp_path)
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert any("vendor" in e.lower() or "name" in e.lower() for e in errors)
@@ -249,19 +249,19 @@ class TestValidatePublishSecurityGates:
         assert any("type" in e.lower() for e in errors)
 
     def test_empty_package_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert any("artifact" in e.lower() for e in errors)
 
     def test_oversized_hook_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "hooks").mkdir()
         (tmp_path / "hooks" / "PreToolUse.sh").write_bytes(b"#" * (64 * 1024 + 1))
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert any("hook" in e.lower() and ("limit" in e.lower() or "exceeds" in e.lower()) for e in errors)
 
     def test_bad_item_name_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "...md").write_text(
             "---\nname: x\ndescription: y\n---\nbody\n", encoding="utf-8")
@@ -271,7 +271,7 @@ class TestValidatePublishSecurityGates:
 
 class TestValidatePublishFrontmatter:
     def test_missing_name_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "r.md").write_text(
             "---\ndescription: only desc\n---\nbody\n", encoding="utf-8")
@@ -279,7 +279,7 @@ class TestValidatePublishFrontmatter:
         assert any("name" in e.lower() and "r.md" in e for e in errors)
 
     def test_missing_description_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "r.md").write_text(
             "---\nname: r\n---\nbody\n", encoding="utf-8")
@@ -287,7 +287,7 @@ class TestValidatePublishFrontmatter:
         assert any("description" in e.lower() and "r.md" in e for e in errors)
 
     def test_unparseable_yaml_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "r.md").write_text(
             "---\nname: [unclosed\n---\nbody\n", encoding="utf-8")
@@ -295,14 +295,14 @@ class TestValidatePublishFrontmatter:
         assert any("yaml" in e.lower() or "frontmatter" in e.lower() for e in errors)
 
     def test_missing_frontmatter_block_reported(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "rules").mkdir()
         (tmp_path / "rules" / "r.md").write_text("plain body, no frontmatter\n", encoding="utf-8")
         errors = validate_publish(tmp_path, skip_dry_install=True)
         assert any("frontmatter" in e.lower() for e in errors)
 
     def test_skill_frontmatter_checked(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "skills" / "s").mkdir(parents=True)
         (tmp_path / "skills" / "s" / "SKILL.md").write_text(
             "---\nname: s\n---\nbody\n", encoding="utf-8")
@@ -310,7 +310,7 @@ class TestValidatePublishFrontmatter:
         assert any("description" in e.lower() and "SKILL.md" in e for e in errors)
 
     def test_hooks_skipped_no_frontmatter_required(self, tmp_path):
-        _write_manifest(tmp_path, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(tmp_path, {"name": "a/b", "type": "bundle"})
         (tmp_path / "hooks").mkdir()
         (tmp_path / "hooks" / "PreToolUse.sh").write_text(
             "#!/bin/sh\necho hi\n", encoding="utf-8")
@@ -329,7 +329,7 @@ class TestValidatePublishDryInstall:
         monkeypatch.setenv("CLEO_USER_HOME", str(tmp_path / "fake-home"))
         pkg = tmp_path / "pkg"
         pkg.mkdir()
-        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(pkg, {"name": "a/b", "type": "bundle"})
         _write_rule(pkg)
         _init_repo(pkg)
         _commit_and_tag(pkg)
@@ -339,7 +339,7 @@ class TestValidatePublishDryInstall:
     def test_no_git_repo_reported(self, tmp_path):
         pkg = tmp_path / "pkg"
         pkg.mkdir()
-        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(pkg, {"name": "a/b", "type": "bundle"})
         _write_rule(pkg)
         errors = validate_publish(pkg)
         assert any("git" in e.lower() for e in errors)
@@ -347,7 +347,7 @@ class TestValidatePublishDryInstall:
     def test_no_tag_reported(self, tmp_path):
         pkg = tmp_path / "pkg"
         pkg.mkdir()
-        _write_manifest(pkg, {"name": "a/b", "type": "skills-pack"})
+        _write_manifest(pkg, {"name": "a/b", "type": "bundle"})
         _write_rule(pkg)
         _init_repo(pkg)
         _git(pkg, "add", "-A")

@@ -28,7 +28,7 @@ First public release.
   - `require-user` — installed into `~/.claude/`, applies across all your repos (rejects hook-containing packages with a clear error)
 - GitHub convention: `vendor/name` resolves to `github.com/vendor/name` automatically
 - `repositories` block override for GitLab, private hosts, local paths
-- `cleo.json` at package root is recommended but optional — repos without one default to `type: skills-pack` (`mcp-server` / `mixed` packages still need `cleo.json` to declare `type`)
+- `cleo.json` at package root is recommended but optional — repos without one default to `type: bundle` (`mcp-server` / `mixed` packages still need `cleo.json` to declare `type`)
 
 ### Lock + cache
 - `cleo.lock` — exact version + commit SHA pinning; written on install/require

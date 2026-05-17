@@ -10,7 +10,7 @@
   "generated": "2026-05-11T12:00:00Z",
   "packages": {
     "vendor/package": {
-      "type": "skills-pack",
+      "type": "bundle",
       "url": "https://github.com/vendor/package",
       "version": "1.2.0",
       "commit": "abc123def456abc123def456abc123def456abc1",
@@ -45,7 +45,7 @@ Keyed by `<vendor>/<name>`. Each entry:
 
 #### `type`
 
-`"skills-pack"` | `"mcp-server"` | `"mixed"` — matches the package's own `cleo.json`.
+`"bundle"` | `"mcp-server"` | `"mixed"` — matches the package's own `cleo.json`.
 
 #### `url`
 

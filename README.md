@@ -21,8 +21,6 @@ Each package installs into one of three scopes:
 - **Local** — gitignored, just you in this repo
 - **User** — out-of-tree (`~/.claude/`), just you across every repo on this machine
 
-> **Status:** early — feedback welcome. API and manifest format may change before `v1.0`.
-
 ```bash
 cleo require acme/cleo-example        # fetches from github.com/acme/cleo-example
 cleo install                          # install everything from cleo.json (lock-strict)
@@ -210,7 +208,7 @@ Generated automatically on `cleo install` / `cleo require`. Pins exact versions 
   "version": 1,
   "packages": {
     "acme/cleo-example": {
-      "type": "skills-pack",
+      "type": "bundle",
       "url": "https://github.com/acme/cleo-example",
       "version": "1.2.0",
       "commit": "abc123def456",
@@ -260,7 +258,7 @@ A **consumer's** `cleo.json` lists what packages to install. A **package's** `cl
 ```json
 {
   "name": "myorg/cleo-example",
-  "type": "skills-pack",
+  "type": "bundle",
   "version": "1.0.0",
   "description": "Short description of what this package provides",
   "homepage": "https://github.com/myorg/cleo-example"
@@ -270,11 +268,11 @@ A **consumer's** `cleo.json` lists what packages to install. A **package's** `cl
 | Field | Required | Notes |
 |---|---|---|
 | `name` | recommended | `<vendor>/<name>` |
-| `type` | recommended | `skills-pack` \| `mcp-server` \| `mixed`. Defaults to `skills-pack` if absent. `mcp-server` / `mixed` *require* this field. |
+| `type` | recommended | `bundle` \| `mcp-server` \| `mixed`. Defaults to `bundle` if absent. `mcp-server` / `mixed` *require* this field. |
 | `version` | recommended | Informational — cleo uses git tags as the source of truth |
 | `description`, `homepage` | optional | Surface in `cleo list`, helps discoverability |
 
-If you omit `cleo.json` entirely, cleo treats the repo as `type: skills-pack` and installs whatever artifact dirs it finds. `mcp.json` is ignored without an explicit `type`.
+If you omit `cleo.json` entirely, cleo treats the repo as `type: bundle` and installs whatever artifact dirs it finds. `mcp.json` is ignored without an explicit `type`.
 
 ### Publish
 

@@ -25,7 +25,7 @@ class TestValidatePackageManifest:
         validate_package_manifest(None, "v/p")
 
     def test_minimal_manifest_is_valid(self):
-        validate_package_manifest({"type": "skills-pack"}, "v/p")
+        validate_package_manifest({"type": "bundle"}, "v/p")
 
     def test_full_valid_manifest(self):
         validate_package_manifest(
@@ -50,18 +50,18 @@ class TestValidatePackageManifestRejections:
 
     def test_rejects_non_string_name(self):
         with pytest.raises(SecurityViolation, match="must match"):
-            validate_package_manifest({"name": 123, "type": "skills-pack"}, "v/p")
+            validate_package_manifest({"name": 123, "type": "bundle"}, "v/p")
 
     def test_rejects_name_without_slash(self):
         with pytest.raises(SecurityViolation, match="must match"):
             validate_package_manifest(
-                {"name": "no-vendor", "type": "skills-pack"}, "v/p"
+                {"name": "no-vendor", "type": "bundle"}, "v/p"
             )
 
     def test_rejects_name_with_path_chars(self):
         with pytest.raises(SecurityViolation, match="must match"):
             validate_package_manifest(
-                {"name": "../../etc/passwd", "type": "skills-pack"}, "v/p"
+                {"name": "../../etc/passwd", "type": "bundle"}, "v/p"
             )
 
 
@@ -165,11 +165,11 @@ from lib.security import validate_package_has_artifacts
 
 class TestValidatePackageHasArtifacts:
     def test_skills_pack_with_items_ok(self):
-        validate_package_has_artifacts(items_count=3, has_mcp_json=False, pkg_type="skills-pack")
+        validate_package_has_artifacts(items_count=3, has_mcp_json=False, pkg_type="bundle")
 
     def test_skills_pack_empty_rejected(self):
         with pytest.raises(SecurityViolation, match="no recognized artifacts"):
-            validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="skills-pack")
+            validate_package_has_artifacts(items_count=0, has_mcp_json=False, pkg_type="bundle")
 
     def test_mcp_server_with_mcp_json_ok(self):
         validate_package_has_artifacts(items_count=0, has_mcp_json=True, pkg_type="mcp-server")

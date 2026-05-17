@@ -58,8 +58,8 @@ The engine prints one line per package as it works. After completion, surface a 
 [cleo/install] installed=2 updated=1 skipped=0 mcp-added=1
 
 Installed:
-  acme/cleo-generic   1.2.0  [skills-pack]  3 rules, 1 skill
-  acme/cleo-example   1.0.0  [skills-pack]  4 rules
+  acme/cleo-generic   1.2.0  [bundle]  3 rules, 1 skill
+  acme/cleo-example   1.0.0  [bundle]  4 rules
 
 Updated:
   acme/cleo-mcp-example  2.1.0 → 2.2.0  [mcp-server]  MCP key: cleo-acme-cleo-mcp-example

@@ -33,8 +33,8 @@ Markdown table, one row per installed package:
 | Package                     | Type        | Version | Commit  | Bucket  | Items |
 | --------------------------- | ----------- | ------- | ------- | ------- | ----- |
 | acme/cleo-mcp-example       | mcp-server  | 2.2.0   | abc123f | project | 1 rule + MCP |
-| acme/cleo-generic           | skills-pack | 1.2.0   | def456a | project | 3 rules, 1 skill |
-| acme/cleo-example           | skills-pack | 1.0.0   | 789abcd | project | 4 rules |
+| acme/cleo-generic           | bundle | 1.2.0   | def456a | project | 3 rules, 1 skill |
+| acme/cleo-example           | bundle | 1.0.0   | 789abcd | project | 4 rules |
 ```
 
 ## Output (--verbose)

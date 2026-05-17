@@ -45,7 +45,7 @@ The engine:
 ```
 [cleo] refreshed /path/to/cleo.json
 [cleo] bumped version 0.1.0 → 0.1.1
-[cleo] acme/widgets 0.1.1 [skills-pack] — validation passed
+[cleo] acme/widgets 0.1.1 [bundle] — validation passed
 [cleo] committed cleo.json (v0.1.1)
 [cleo] created tag v0.1.1
 [cleo] pushed main + v0.1.1 to origin
