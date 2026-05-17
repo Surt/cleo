@@ -184,6 +184,12 @@ Generated automatically on `cleo install` / `cleo require`. Pins exact versions 
 
 `cleo update` is the only command that changes pinned versions. Everything else honors the lock.
 
+### Security
+
+cleo fetches code from git and copies it into your project. Each install is validated for safe package names, symlinks, git refs, file types, hook size, and manifest shape. It does **not** sandbox installed artifacts, sign packages, or scan content — that's on you and on Claude Code's permission model.
+
+Full threat model + what's out of scope: [`spec/security.md`](spec/security.md).
+
 ---
 
 ## Publish a cleo package
@@ -239,7 +245,7 @@ If you omit `cleo.json` entirely, cleo treats the repo as `type: skills-pack` an
 
 Done. Anyone can install with `cleo require myorg/cleo-example`.
 
-Full package spec: [`spec/package-format.md`](spec/package-format.md).
+Full package spec: [`spec/package-format.md`](spec/package-format.md). What cleo refuses to install (hook size limits, symlinks, manifest shape): [`spec/security.md`](spec/security.md).
 
 ---
 
