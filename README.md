@@ -6,20 +6,7 @@
 
 **npm · pip · composer · cargo — for everything that goes in `.claude/`.**
 
-cleo is a dependency manager for the Claude ecosystem. One manifest, one command, and your whole team gets the same setup:
-
-- **Rules** — `CLAUDE.md` / `.claude/rules/`
-- **Skills** — `SKILL.md` directories
-- **Agents** — subagent definitions
-- **Slash commands**
-- **Hooks** — tool-event scripts
-- **MCP server configs**
-
-Each package installs into one of three scopes:
-
-- **Project** — committed to the repo, shared with your whole team
-- **Local** — gitignored, just you in this repo
-- **User** — out-of-tree (`~/.claude/`), just you across every repo on this machine
+cleo is a dependency manager for the Claude ecosystem. One manifest pulls rules, skills, agents, commands, hooks, and MCP configs from dozens of authors — `cleo install` gives your whole team the same setup, `cleo update` keeps it current as each author ships fixes.
 
 ```bash
 cleo require Surt/cleo-plan-then-doc  # fetches from github.com/Surt/cleo-plan-then-doc
@@ -29,6 +16,8 @@ cleo remove Surt/cleo-plan-then-doc   # uninstall + clean up
 ```
 
 No registration. No central server. `vendor/name` resolves to `github.com/vendor/name` automatically.
+
+Each install is validated (safe paths, git refs, manifest shape, hook size) and pinned by commit SHA in `cleo.lock` — reproducible across machines, auditable in review.
 
 The README has two halves: [**Use cleo**](#use-cleo-install-packages-into-your-project) (consume packages in your project) and [**Publish a cleo package**](#publish-a-cleo-package) (author and share your own).
 
@@ -81,7 +70,34 @@ cleo list       # see what's installed
 cleo remove Surt/cleo-plan-then-doc
 ```
 
-Teammates clone the repo + run `cleo install` (or `/cleo-install`) and get the exact same state from `cleo.lock`.
+### Commands
+
+| Command | Description |
+|---|---|
+| `cleo init` | Scaffold a starter `cleo.json` |
+| `cleo install` | Install from `cleo.json` (lock-strict when `cleo.lock` exists) |
+| `cleo require <vendor/pkg> [--repo <url>]` | Add a package and install it |
+| `cleo remove <vendor/pkg>` | Uninstall — removes files, MCP entries, hooks, manifest entry |
+| `cleo update [<vendor/pkg>]` | Re-resolve within constraints, update lock |
+| `cleo list` | Show installed packages |
+| `cleo check` | Validate manifest, report missing files, detect on-disk drift |
+
+**Claude Code slash commands** — same ops, inside a session: `/cleo-install` · `/cleo-require` · `/cleo-remove` · `/cleo-update` · `/cleo-list`. `/cleo-require` accepts `--repo <url>`.
+
+### Where files land
+
+Each package's content maps directly to Claude Code surfaces:
+
+| In the package | Installed to | Claude Code concept |
+|---|---|---|
+| `rules/*.md` | `.claude/rules/` | [Memory rules](https://code.claude.com/docs/en/memory) |
+| `skills/*/SKILL.md` | `.claude/skills/` | [Skills](https://code.claude.com/docs/en/skills) |
+| `agents/*.md` | `.claude/agents/` | [Subagents](https://code.claude.com/docs/en/sub-agents) |
+| `commands/*.md` | `.claude/commands/` | Slash commands (legacy form; merged into skills upstream) |
+| `hooks/*.sh` | `.claude/hooks/` + `settings.json` | [Tool-event hooks](https://code.claude.com/docs/en/hooks) |
+| `mcp.json` | `settings.json` → `mcpServers` | [MCP servers](https://code.claude.com/docs/en/mcp) |
+
+cleo fetches into `~/.claude/cleo/packages/<vendor>/<name>/<version>/` (version-pinned cache), then copies into your project. Installed files are prefixed `cleo-<vendor>-<pkg>-` so they never collide with hand-written ones.
 
 ### Your `cleo.json`
 
@@ -169,35 +185,6 @@ cleo is a drop-in replacement. Nothing you've installed gets thrown away, no com
 **Symlink mode.** `cleo require <src> --symlink` links from the package cache instead of copying — handy when authoring a skill in another working tree (mirrors `npx skills --symlink`).
 
 **Adopt skills already on disk.** If `.claude/skills/` has SKILL.md directories cleo doesn't yet track, `cleo update --adopt` registers them into `cleo.json` + `cleo.lock` so they survive a fresh clone. `--scope project|global|both` narrows the scan; `--dry-run` previews the diff.
-
-### Commands
-
-| Command | Description |
-|---|---|
-| `cleo init` | Scaffold a starter `cleo.json` |
-| `cleo install` | Install from `cleo.json` (lock-strict when `cleo.lock` exists) |
-| `cleo require <vendor/pkg> [--repo <url>]` | Add a package and install it |
-| `cleo remove <vendor/pkg>` | Uninstall — removes files, MCP entries, hooks, manifest entry |
-| `cleo update [<vendor/pkg>]` | Re-resolve within constraints, update lock |
-| `cleo list` | Show installed packages |
-| `cleo check` | Validate manifest, report missing files, detect on-disk drift |
-
-**Claude Code slash commands** — same ops, inside a session: `/cleo-install` · `/cleo-require` · `/cleo-remove` · `/cleo-update` · `/cleo-list`. `/cleo-require` accepts `--repo <url>`.
-
-### Where files land
-
-Each package's content maps directly to Claude Code surfaces:
-
-| In the package | Installed to | Claude Code concept |
-|---|---|---|
-| `rules/*.md` | `.claude/rules/` | [Memory rules](https://code.claude.com/docs/en/memory) |
-| `skills/*/SKILL.md` | `.claude/skills/` | [Skills](https://code.claude.com/docs/en/skills) |
-| `agents/*.md` | `.claude/agents/` | [Subagents](https://code.claude.com/docs/en/sub-agents) |
-| `commands/*.md` | `.claude/commands/` | Slash commands (legacy form; merged into skills upstream) |
-| `hooks/*.sh` | `.claude/hooks/` + `settings.json` | [Tool-event hooks](https://code.claude.com/docs/en/hooks) |
-| `mcp.json` | `settings.json` → `mcpServers` | [MCP servers](https://code.claude.com/docs/en/mcp) |
-
-cleo fetches into `~/.claude/cleo/packages/<vendor>/<name>/<version>/` (version-pinned cache), then copies into your project. Installed files are prefixed `cleo-<vendor>-<pkg>-` so they never collide with hand-written ones.
 
 ### Lock file (`cleo.lock`)
 
