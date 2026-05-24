@@ -173,6 +173,15 @@ def resolve_all(
     while queue:
         if jobs > 1:
             batch, queue = _take_batch(queue, visited_names)
+            if not batch:
+                # All remaining items are already-visited duplicates.
+                # Record their required_by / constraint info and drain.
+                for pending, _depth in queue:
+                    if pending.name in resolved:
+                        resolved[pending.name].required_by.append(pending.required_by)
+                        constraints.setdefault(pending.name, []).append(pending.constraint)
+                queue.clear()
+                break
             results = _fetch_batch_parallel(
                 batch, resolve_version_fn, resolve_commit_fn,
                 pkg_cache_dir_fn, clone_fn, offline, jobs,

@@ -314,3 +314,97 @@ class TestOrphanRemoval:
         lock_data = json.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
         assert "v/a" not in lock_data["packages"]
         assert "v/b" not in lock_data["packages"]
+
+
+class TestInstallPreservesTransitiveDeps:
+    def test_install_keeps_transitive_deps_in_lock(self, tmp_path):
+        """cleo install should not drop transitive deps from the lock."""
+        pkg_b = tmp_path / "repos" / "v" / "b"
+        make_pkg(pkg_b, "v/b", "1.0.0")
+
+        pkg_a = tmp_path / "repos" / "v" / "a"
+        make_pkg(pkg_a, "v/a", "1.0.0",
+                 requires={"v/b": "^1.0"},
+                 repositories=[{"type": "git", "url": file_url(pkg_b)}])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/a", "-c", "^1.0",
+                     "--repo", file_url(pkg_a), "--project", str(proj))
+        assert r.returncode == 0, r.stderr
+
+        # Both should be in lock after require.
+        lock_data = json.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
+        assert "v/a" in lock_data["packages"]
+        assert "v/b" in lock_data["packages"]
+
+        # Re-run install — transitive dep must survive.
+        r = run_cleo("install", "--project", str(proj))
+        assert r.returncode == 0, r.stderr
+
+        lock_data = json.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
+        assert "v/a" in lock_data["packages"]
+        assert "v/b" in lock_data["packages"], "transitive dep v/b was dropped from lock"
+
+
+class TestCheckNoFalseWarning:
+    def test_check_does_not_warn_about_transitive_deps(self, tmp_path):
+        """cleo check should not warn about transitive deps in lock."""
+        pkg_b = tmp_path / "repos" / "v" / "b"
+        make_pkg(pkg_b, "v/b", "1.0.0")
+
+        pkg_a = tmp_path / "repos" / "v" / "a"
+        make_pkg(pkg_a, "v/a", "1.0.0",
+                 requires={"v/b": "^1.0"},
+                 repositories=[{"type": "git", "url": file_url(pkg_b)}])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        run_cleo("init", "--project", str(proj))
+        r = run_cleo("require", "v/a", "-c", "^1.0",
+                     "--repo", file_url(pkg_a), "--project", str(proj))
+        assert r.returncode == 0, r.stderr
+
+        r = run_cleo("check", "--project", str(proj))
+        combined = r.stdout + r.stderr
+        assert "not in cleo.json" not in combined, \
+            f"cleo check falsely warned about transitive dep: {combined}"
+
+
+class TestParallelDiamondNoCrash:
+    def test_parallel_diamond_does_not_crash(self, tmp_path):
+        """Diamond dep (A→C, B→C) with --jobs 2 should not crash."""
+        pkg_c = tmp_path / "repos" / "v" / "c"
+        make_pkg(pkg_c, "v/c", "1.0.0")
+
+        pkg_a = tmp_path / "repos" / "v" / "a"
+        make_pkg(pkg_a, "v/a", "1.0.0",
+                 requires={"v/c": "^1.0"},
+                 repositories=[{"type": "git", "url": file_url(pkg_c)}])
+
+        pkg_b = tmp_path / "repos" / "v" / "b"
+        make_pkg(pkg_b, "v/b", "1.0.0",
+                 requires={"v/c": "^1.0"},
+                 repositories=[{"type": "git", "url": file_url(pkg_c)}])
+
+        proj = tmp_path / "proj"
+        proj.mkdir()
+        manifest = {
+            "name": "test",
+            "repositories": [
+                {"type": "git", "url": file_url(pkg_a)},
+                {"type": "git", "url": file_url(pkg_b)},
+            ],
+            "require": {"v/a": "^1.0", "v/b": "^1.0"},
+        }
+        (proj / "cleo.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+        r = run_cleo("install", "--jobs", "2", "--project", str(proj))
+        assert r.returncode == 0, f"parallel diamond install crashed: {r.stderr}"
+
+        lock_data = json.loads((proj / "cleo.lock").read_text(encoding="utf-8"))
+        pkgs = lock_data.get("packages", {})
+        assert "v/a" in pkgs
+        assert "v/b" in pkgs
+        assert "v/c" in pkgs

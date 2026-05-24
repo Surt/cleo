@@ -1242,6 +1242,17 @@ def cmd_install(args: argparse.Namespace) -> int:
             new_lock[pkg_name] = result
             installed += 1
 
+    # Carry over locked transitive deps whose requirers are still present.
+    carry_pass = True
+    while carry_pass:
+        carry_pass = False
+        for pkg_name, pkg in lock.items():
+            if pkg_name in new_lock or not pkg.required_by:
+                continue
+            if any(r in new_lock for r in pkg.required_by):
+                new_lock[pkg_name] = pkg
+                carry_pass = True
+
     if not args.dry_run:
         save_lock(project, new_lock)
 
@@ -1680,13 +1691,55 @@ def cmd_check(args: argparse.Namespace) -> int:
                     warn(f"{pkg_name}: {item.type} '{item.name}' modified on disk — run: cleo install --force")
                     issues += 1
 
-    for pkg_name in lock:
-        if pkg_name not in all_requires:
+    for pkg_name, pkg in lock.items():
+        if pkg_name not in all_requires and not pkg.required_by:
             warn(f"{pkg_name} is in lock but not in {MANIFEST_FILE}")
 
     if issues == 0:
         ok("all packages OK")
     return 0 if issues == 0 else 1
+
+
+def _uninstall_package(project: Path, pkg_name: str, pkg: "LockPackage", *, quiet: bool = False) -> None:
+    """Remove all artifacts, hooks, MCP entries, and settings for a package."""
+    for item in pkg.items:
+        if not item.path:
+            continue
+        p = Path(item.path)
+        if p.exists():
+            if p.is_dir() and not p.is_symlink():
+                shutil.rmtree(p)
+            else:
+                p.unlink()
+            if not quiet:
+                ok(f"  removed {item.type} {item.name}")
+
+    safe_pkg = pkg_name.replace("/", "-")
+
+    hook_dir = project / ".claude" / "hooks" / f"cleo-{safe_pkg}"
+    if hook_dir.exists():
+        shutil.rmtree(hook_dir)
+
+    if pkg.mcp_server_key:
+        settings_path = _settings_path(project, pkg.bucket)
+        data = _load_settings(settings_path)
+        servers = data.get(MCP_SERVERS_KEY, {})
+        if pkg.mcp_server_key in servers:
+            del servers[pkg.mcp_server_key]
+            data[MCP_SERVERS_KEY] = servers
+            _save_settings(settings_path, data)
+            if not quiet:
+                ok(f"  removed MCP server '{pkg.mcp_server_key}' from settings.json")
+
+    settings_path = _settings_path(project, pkg.bucket)
+    data = _load_settings(settings_path)
+    hooks_cfg = data.get(HOOKS_KEY, {})
+    stale_keys = [k for k in hooks_cfg if k.startswith(f"cleo-{safe_pkg}-")]
+    if stale_keys:
+        for k in stale_keys:
+            del hooks_cfg[k]
+        data[HOOKS_KEY] = hooks_cfg
+        _save_settings(settings_path, data)
 
 
 def cmd_remove(args: argparse.Namespace) -> int:
@@ -1710,48 +1763,7 @@ def cmd_remove(args: argparse.Namespace) -> int:
             not_found += 1
             continue
 
-        # Remove materialized files/dirs.
-        for item in pkg.items:
-            if not item.path:
-                continue
-            p = Path(item.path)
-            if p.exists():
-                if p.is_dir() and not p.is_symlink():
-                    shutil.rmtree(p)
-                else:
-                    p.unlink()
-                if not args.quiet:
-                    ok(f"  removed {item.type} {item.name}")
-
-        safe_pkg = pkg_name.replace("/", "-")
-
-        # Remove hooks directory.
-        hook_dir = project / ".claude" / "hooks" / f"cleo-{safe_pkg}"
-        if hook_dir.exists():
-            shutil.rmtree(hook_dir)
-
-        # Remove MCP server entry from settings.json.
-        if pkg.mcp_server_key:
-            settings_path = _settings_path(project, pkg.bucket)
-            data = _load_settings(settings_path)
-            servers = data.get(MCP_SERVERS_KEY, {})
-            if pkg.mcp_server_key in servers:
-                del servers[pkg.mcp_server_key]
-                data[MCP_SERVERS_KEY] = servers
-                _save_settings(settings_path, data)
-                if not args.quiet:
-                    ok(f"  removed MCP server '{pkg.mcp_server_key}' from settings.json")
-
-        # Remove hook registrations from settings.json.
-        settings_path = _settings_path(project, pkg.bucket)
-        data = _load_settings(settings_path)
-        hooks_cfg = data.get(HOOKS_KEY, {})
-        stale_keys = [k for k in hooks_cfg if k.startswith(f"cleo-{safe_pkg}-")]
-        if stale_keys:
-            for k in stale_keys:
-                del hooks_cfg[k]
-            data[HOOKS_KEY] = hooks_cfg
-            _save_settings(settings_path, data)
+        _uninstall_package(project, pkg_name, pkg, quiet=args.quiet)
 
         # Remove from manifest.
         manifest_changed = False
@@ -1774,24 +1786,14 @@ def cmd_remove(args: argparse.Namespace) -> int:
         for dep_name, dep_pkg in list(new_lock.items()):
             if not dep_pkg.required_by:
                 continue
-            # Check if all requirers are still in the lock.
             still_needed = any(r in new_lock for r in dep_pkg.required_by)
-            # Also keep if it's a direct manifest entry.
             in_manifest = False
             for key in ("require", "require-local", "require-user"):
                 if dep_name in manifest.get(key, {}):
                     in_manifest = True
                     break
             if not still_needed and not in_manifest:
-                # Remove orphan's files.
-                for item in dep_pkg.items:
-                    if item.path:
-                        p = Path(item.path)
-                        if p.exists():
-                            if p.is_dir() and not p.is_symlink():
-                                shutil.rmtree(p)
-                            else:
-                                p.unlink()
+                _uninstall_package(project, dep_name, dep_pkg, quiet=args.quiet)
                 del new_lock[dep_name]
                 removed += 1
                 orphan_pass = True
