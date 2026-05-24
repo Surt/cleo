@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Transitive dependency resolution with topological sort (Kahn's algorithm) and cycle detection
+- `require` field in `cleo.json` for declaring transitive dependencies
+- `--jobs` / `-j` flag on `install`, `require`, and `update` for parallel git fetches via `ThreadPoolExecutor`
+- `required_by` field in `cleo.lock` for dependency tracking
+- Garbage-collection of orphaned transitive deps on `cleo remove`
+- PyPI packaging (`pip install ClaudeCleo`) with `setuptools-scm` for automatic versioning from git tags
+- `main_cli()` entry point for `console_scripts`
+- GitHub Releases workflow: on `v*` tag push, runs tests, builds sdist+wheel, publishes to PyPI (trusted publisher), and creates a GitHub Release
+
+### Changed
+- PyPI package renamed from `cleo-pm` to `ClaudeCleo`
+
+### Fixed
+- `cleo check`: skip false warnings for transitive deps in lock (have `required_by`)
+- Resolver: handle empty batch in parallel mode to avoid `ValueError` crash on diamond dependencies
+- `cleo install`: carry over locked transitive deps on re-install instead of silently dropping them
+- `cleo remove`: extract `_uninstall_package()` helper so orphan removal also cleans hooks, MCP entries, and settings registrations
+
+## [0.3.0] — 2026-05-24
+
+### Changed
+- README reframed pitch, surfaced ops tables
+
 ## [0.2.1] — 2026-05-17
 
 ### Added
@@ -102,7 +126,8 @@ First public release.
 ### License
 - GPL-3.0-or-later. SPDX identifier in `tools/cleo.py`. Copyright © 2026 Erik Wiesenthal.
 
-[Unreleased]: https://github.com/Surt/cleo/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Surt/cleo/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Surt/cleo/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Surt/cleo/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Surt/cleo/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Surt/cleo/releases/tag/v0.1.0
