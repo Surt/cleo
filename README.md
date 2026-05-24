@@ -152,6 +152,37 @@ Use `repositories` to override the GitHub convention for specific packages (GitL
 | `>=1.0` | at least 1.0 |
 | `>=1.0 <2.0` | range |
 
+### Transitive dependencies
+
+Packages can declare their own dependencies in their `cleo.json`:
+
+```json
+{
+  "name": "acme/full-stack",
+  "type": "bundle",
+  "version": "1.0.0",
+  "require": {
+    "acme/typescript-rules": "^1.0",
+    "acme/react-agent": "^2.0"
+  }
+}
+```
+
+When you `cleo require acme/full-stack`, cleo resolves and installs all transitive dependencies automatically — in topological order so deps land before the packages that need them. Cycles are detected and reported as errors. Version conflicts (two packages requiring incompatible ranges of the same dep) are caught before any files are written.
+
+`cleo remove` garbage-collects orphaned transitive deps: removing a top-level package also removes its deps if nothing else needs them.
+
+### Parallel fetching
+
+Speed up installs with `--jobs` / `-j`:
+
+```bash
+cleo install --jobs 4        # fetch 4 packages at once
+cleo require acme/pkg -j 4   # parallel fetch during require
+```
+
+Git clones/fetches run in parallel; file materialization remains sequential to avoid race conditions. Default is `1` (sequential).
+
 ### URL resolution
 
 cleo resolves `vendor/name` in this order:

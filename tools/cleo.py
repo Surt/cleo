@@ -57,6 +57,12 @@ from lib.security import (  # noqa: E402
     HOOK_SIZE_MAX_BYTES,
 )
 from lib import publish as publish_mod  # noqa: E402
+from lib.resolver import (  # noqa: E402
+    DependencyCycle,
+    ResolvedPackage,
+    VersionConflict,
+    resolve_all,
+)
 
 LOCK_VERSION = 1
 MANIFEST_FILE = "cleo.json"
@@ -348,6 +354,7 @@ class LockPackage:
     items: list[LockItem] = field(default_factory=list)
     mcp_server_key: Optional[str] = None
     install_mode: str = "copy"  # "copy" | "symlink"
+    required_by: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.install_mode not in VALID_INSTALL_MODES:
@@ -368,6 +375,8 @@ class LockPackage:
             d["mcp_server_key"] = self.mcp_server_key
         if self.install_mode != "copy":
             d["install_mode"] = self.install_mode
+        if self.required_by:
+            d["required_by"] = self.required_by
         return d
 
     @classmethod
@@ -381,6 +390,7 @@ class LockPackage:
             bucket=d.get("bucket", BUCKET_PROJECT),
             mcp_server_key=d.get("mcp_server_key"),
             install_mode=d.get("install_mode", "copy"),
+            required_by=d.get("required_by", []),
             items=[
                 LockItem(type=i["type"], name=i["name"], path=i["path"], sha=i.get("sha", ""))
                 for i in d.get("items", [])
@@ -1118,13 +1128,15 @@ def cmd_install(args: argparse.Namespace) -> int:
     from disk are re-materialized from cache (or re-cloned if cache was cleared).
 
     When cleo.lock does not exist: resolve versions from cleo.json constraints,
-    install, and write a fresh lock.
+    install, and write a fresh lock. Transitive dependencies declared in
+    package manifests are resolved and installed automatically.
     """
     project = args.project.resolve()
     cli_install_mode = "symlink" if getattr(args, "symlink", False) else None
     manifest = load_manifest(project)
     lock = load_lock(project)
     lock_exists = _lock_path(project).exists()
+    jobs = getattr(args, "jobs", 1)
 
     buckets_to_install = [
         (BUCKET_PROJECT, manifest.get("require", {})),
@@ -1134,6 +1146,9 @@ def cmd_install(args: argparse.Namespace) -> int:
 
     installed = restored = skipped = 0
     new_lock: dict[str, LockPackage] = {}
+
+    # Collect packages that need fresh resolution (not locked).
+    needs_resolve: list[tuple[str, str, str, str]] = []  # (name, constraint, url, bucket)
 
     for bucket, requires in buckets_to_install:
         for pkg_name, constraint in requires.items():
@@ -1145,8 +1160,6 @@ def cmd_install(args: argparse.Namespace) -> int:
             existing = lock.get(pkg_name)
 
             if lock_exists and existing:
-                # Lock-strict: files present → skip. Files missing → restore from
-                # locked version (re-clone if cache was also cleared).
                 all_present = all(Path(i.path).exists() for i in existing.items if i.path)
                 if all_present and not args.dry_run:
                     new_lock[pkg_name] = existing
@@ -1154,7 +1167,6 @@ def cmd_install(args: argparse.Namespace) -> int:
                     if not args.quiet:
                         info(f"skipped {pkg_name} {existing.version} (locked)")
                     continue
-                # Re-materialize at exact locked version.
                 result = install_package(
                     project, pkg_name, existing.url, constraint, bucket,
                     locked_version=existing.version,
@@ -1170,13 +1182,54 @@ def cmd_install(args: argparse.Namespace) -> int:
                 restored += 1
                 continue
 
-            # No lock or package not yet in lock → resolve from constraint.
             try:
                 url = _resolve_url(manifest, pkg_name, None)
             except SystemExit as exc:
                 err(str(exc).replace(f"{TAG} ", ""))
                 continue
 
+            needs_resolve.append((pkg_name, constraint, url, bucket))
+
+    # Resolve transitive dependencies for unlocked packages.
+    if needs_resolve and not args.dry_run and not args.offline:
+        try:
+            resolved_pkgs = resolve_all(
+                needs_resolve,
+                pkg_cache_dir_fn=_pkg_cache_dir,
+                clone_fn=_clone_or_fetch,
+                resolve_version_fn=resolve_version,
+                resolve_commit_fn=resolve_commit,
+                offline=args.offline,
+                jobs=jobs,
+            )
+        except DependencyCycle as exc:
+            err(str(exc))
+            return 1
+        except VersionConflict as exc:
+            err(str(exc))
+            return 1
+
+        # Install in topological order (deps first).
+        for rpkg in resolved_pkgs:
+            if rpkg.name in new_lock:
+                continue  # already handled (locked/restored)
+            result = install_package(
+                project, rpkg.name, rpkg.url, rpkg.constraint, rpkg.bucket,
+                locked_version=rpkg.version,
+                locked_commit=rpkg.commit,
+                install_mode=cli_install_mode or "copy",
+                dry_run=args.dry_run,
+                offline=args.offline,
+                quiet=args.quiet,
+            )
+            if result is None:
+                continue
+            result.required_by = rpkg.required_by
+            new_lock[rpkg.name] = result
+            installed += 1
+    else:
+        # Dry-run / offline: install top-level only (no transitive resolution).
+        for pkg_name, constraint, url, bucket in needs_resolve:
             result = install_package(
                 project, pkg_name, url, constraint, bucket,
                 install_mode=cli_install_mode or "copy",
@@ -1322,24 +1375,54 @@ def cmd_require(args: argparse.Namespace) -> int:
     if not args.quiet:
         info(f"resolving {pkg_ref} ({constraint}) from {repo_url} …")
 
-    result = install_package(
-        project, pkg_ref, repo_url, constraint, bucket,
-        install_mode=install_mode,
-        dry_run=args.dry_run, quiet=args.quiet,
-    )
-    if result is None:
+    # Resolve transitive dependencies before installing.
+    try:
+        resolved_pkgs = resolve_all(
+            [(pkg_ref, constraint, repo_url, bucket)],
+            pkg_cache_dir_fn=_pkg_cache_dir,
+            clone_fn=_clone_or_fetch,
+            resolve_version_fn=resolve_version,
+            resolve_commit_fn=resolve_commit,
+            offline=False,
+            jobs=getattr(args, "jobs", 1),
+        )
+    except DependencyCycle as exc:
+        err(str(exc))
         return 1
+    except VersionConflict as exc:
+        err(str(exc))
+        return 1
+
+    lock = load_lock(project)
+    dep_count = 0
+
+    # Install in topological order (deps first, main package last).
+    for rpkg in resolved_pkgs:
+        result = install_package(
+            project, rpkg.name, rpkg.url, rpkg.constraint, rpkg.bucket,
+            locked_version=rpkg.version,
+            locked_commit=rpkg.commit,
+            install_mode=install_mode,
+            dry_run=args.dry_run, quiet=args.quiet,
+        )
+        if result is None:
+            if rpkg.name == pkg_ref:
+                return 1
+            continue
+        result.required_by = rpkg.required_by
+        lock[rpkg.name] = result
+        if rpkg.name != pkg_ref:
+            dep_count += 1
 
     manifest_add_package(project, pkg_ref, constraint, bucket, repo_url)
 
-    lock = load_lock(project)
-    lock[pkg_ref] = result
     if not args.dry_run:
         save_lock(project, lock)
 
     if not args.quiet:
         suffix = " (dry-run)" if args.dry_run else ""
-        ok(f"Added {pkg_ref}@{constraint}{suffix}")
+        dep_info = f" + {dep_count} dep(s)" if dep_count else ""
+        ok(f"Added {pkg_ref}@{constraint}{dep_info}{suffix}")
         info("Commit cleo.json and cleo.lock.")
     return 0
 
@@ -1503,7 +1586,8 @@ def cmd_list(args: argparse.Namespace) -> int:
     if args.verbose:
         print()
         for name, pkg in sorted(lock.items()):
-            info(f"{name} {pkg.version}")
+            dep_info = f" (required by: {', '.join(pkg.required_by)})" if pkg.required_by else ""
+            info(f"{name} {pkg.version}{dep_info}")
             for item in pkg.items:
                 print(f"    {item.type:<10} {item.name:<40} {item.path}")
     return 0
@@ -1683,6 +1767,37 @@ def cmd_remove(args: argparse.Namespace) -> int:
         if not args.quiet:
             ok(f"removed {pkg_name}")
 
+    # Remove orphaned transitive deps (required_by all removed).
+    orphan_pass = True
+    while orphan_pass:
+        orphan_pass = False
+        for dep_name, dep_pkg in list(new_lock.items()):
+            if not dep_pkg.required_by:
+                continue
+            # Check if all requirers are still in the lock.
+            still_needed = any(r in new_lock for r in dep_pkg.required_by)
+            # Also keep if it's a direct manifest entry.
+            in_manifest = False
+            for key in ("require", "require-local", "require-user"):
+                if dep_name in manifest.get(key, {}):
+                    in_manifest = True
+                    break
+            if not still_needed and not in_manifest:
+                # Remove orphan's files.
+                for item in dep_pkg.items:
+                    if item.path:
+                        p = Path(item.path)
+                        if p.exists():
+                            if p.is_dir() and not p.is_symlink():
+                                shutil.rmtree(p)
+                            else:
+                                p.unlink()
+                del new_lock[dep_name]
+                removed += 1
+                orphan_pass = True
+                if not args.quiet:
+                    ok(f"removed orphan {dep_name}")
+
     save_lock(project, new_lock)
 
     if not args.quiet:
@@ -1841,6 +1956,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--offline", action="store_true")
     s.add_argument("--symlink", action="store_true",
                    help="Symlink artifacts from cache (live updates) instead of copying")
+    s.add_argument("--jobs", "-j", type=int, default=1,
+                   help="Parallel fetch workers (default: 1, sequential)")
     s.set_defaults(fn=cmd_install)
 
     s = sub.add_parser("require", aliases=["add"], help="Add a package to cleo.json and install it", parents=[common_sub])
@@ -1852,6 +1969,8 @@ def main(argv: list[str]) -> int:
     s.add_argument("--symlink", action="store_true",
                    help="Symlink artifacts from cache (live updates) instead of copying")
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--jobs", "-j", type=int, default=1,
+                   help="Parallel fetch workers (default: 1, sequential)")
     s.set_defaults(fn=cmd_require)
 
     s = sub.add_parser("remove", aliases=["rm"], help="Remove packages, clean up files, update manifest", parents=[common_sub])
@@ -1867,6 +1986,8 @@ def main(argv: list[str]) -> int:
                    help="Register untracked SKILL.md directories found in .claude/skills/")
     s.add_argument("--scope", choices=["project", "global", "both"], default="both",
                    help="Where to scan for untracked skills (default: both)")
+    s.add_argument("--jobs", "-j", type=int, default=1,
+                   help="Parallel fetch workers (default: 1, sequential)")
     s.set_defaults(fn=cmd_update)
 
     s = sub.add_parser("list", aliases=["ls"], help="List installed packages", parents=[common_sub])
