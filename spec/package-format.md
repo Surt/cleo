@@ -50,7 +50,13 @@ Only the directories you need. A package with only `rules/` is perfectly valid.
   "type": "bundle",
   "version": "1.0.0",
   "description": "Short description of what this package provides",
-  "homepage": "https://github.com/vendor/my-package"
+  "homepage": "https://github.com/vendor/my-package",
+  "require": {
+    "other/dependency": "^1.0"
+  },
+  "repositories": [
+    { "type": "git", "url": "https://gitlab.com/other/dependency" }
+  ]
 }
 ```
 
@@ -63,6 +69,8 @@ Only the directories you need. A package with only `rules/` is perfectly valid.
 | `version` | recommended | Current semver version (informational — cleo uses git tags) |
 | `description` | recommended | One-line description |
 | `homepage` | optional | Link to docs or repo |
+| `require` | optional | Transitive dependencies — same `{ "vendor/name": "constraint" }` format as a consumer manifest. cleo resolves and installs these automatically when the package is required. |
+| `repositories` | optional | Git URL overrides for dependencies that aren't on GitHub (same format as consumer `repositories`). |
 
 > **Note.** If `cleo.json` is missing, cleo treats the repo as `type: bundle` and installs whatever artifact directories it finds. Any `mcp.json` present will be ignored (no `type` to declare `mcp-server` / `mixed`).
 

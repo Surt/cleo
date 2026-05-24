@@ -67,6 +67,10 @@ Full git commit SHA the version tag resolves to.
 
 For `mcp-server` / `mixed` packages: the key added to `mcpServers` in `settings.json`. `null` for skills-only packages.
 
+#### `required_by`
+
+Optional array of package names that declared this package as a transitive dependency. Empty or absent for direct (top-level) requirements. Used by `cleo remove` to garbage-collect orphaned transitive deps.
+
 #### `install_mode`
 
 `"copy"` (default) | `"symlink"` — how artifacts were materialized into `.claude/...`:
