@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "setuptools-scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cleo-pm"
+name = "ClaudeCleo"
 dynamic = ["version"]
 description = "Dependency manager for the Claude ecosystem — rules, skills, agents, commands, hooks, MCP servers."
 readme = "README.md"
@@ -33,12 +33,12 @@ Issues = "https://github.com/Surt/cleo/issues"
 Changelog = "https://github.com/Surt/cleo/blob/main/CHANGELOG.md"
 
 [project.scripts]
-cleo = "cleo_pm.cleo:main_cli"
+cleo = "claudecleo.cleo:main_cli"
 
 [tool.setuptools]
-packages = ["cleo_pm", "cleo_pm.lib"]
+packages = ["claudecleo", "claudecleo.lib"]
 
 [tool.setuptools.package-dir]
-"cleo_pm" = "tools"
+"claudecleo" = "tools"
 
 [tool.setuptools_scm]
