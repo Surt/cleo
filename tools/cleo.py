@@ -1915,5 +1915,10 @@ def main(argv: list[str]) -> int:
     return args.fn(args)
 
 
-if __name__ == "__main__":
+def main_cli() -> None:
+    """Console-scripts entry point (installed by ``pip install cleo-pm``)."""
     sys.exit(main(sys.argv[1:]))
+
+
+if __name__ == "__main__":
+    main_cli()

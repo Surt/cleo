@@ -1,6 +1,7 @@
 # cleo
 
 [![CI](https://github.com/Surt/cleo/actions/workflows/ci.yml/badge.svg)](https://github.com/Surt/cleo/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/cleo-pm)](https://pypi.org/project/cleo-pm/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 
@@ -32,7 +33,13 @@ The README has two halves: [**Use cleo**](#use-cleo-install-packages-into-your-p
 /plugin install cleo@cleo
 ```
 
-**As a standalone CLI** (works anywhere, no Claude Code needed):
+**Via pip** (works anywhere, no Claude Code needed):
+
+```bash
+pip install cleo-pm
+```
+
+**From source** (if you prefer to clone):
 
 ```bash
 git clone https://github.com/Surt/cleo
