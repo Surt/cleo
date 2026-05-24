@@ -2039,7 +2039,7 @@ def main(argv: list[str]) -> int:
 
 
 def main_cli() -> None:
-    """Console-scripts entry point (installed by ``pip install cleo-pm``)."""
+    """Console-scripts entry point (installed by ``pip install ClaudeCleo``)."""
     sys.exit(main(sys.argv[1:]))
 
 
