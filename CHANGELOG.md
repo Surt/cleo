@@ -5,6 +5,14 @@ All notable changes to cleo will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1](https://github.com/Surt/cleo/compare/v0.4.0...v0.4.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* merge release workflow into release-please to fix PyPI publishing ([ebe4e20](https://github.com/Surt/cleo/commit/ebe4e206b00a56ef5b920efe00e13c0a91021e5f))
+* merge release workflow into release-please to fix PyPI publishing ([fe9f957](https://github.com/Surt/cleo/commit/fe9f957f53ee80033903465c95f9577692e7137c))
+
 ## [0.4.0](https://github.com/Surt/cleo/compare/v0.3.0...v0.4.0) (2026-05-24)
 
 
