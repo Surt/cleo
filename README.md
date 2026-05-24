@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="cleo-icon-240.png" alt="cleo logo" width="120" />
+</p>
+
 # cleo
 
 [![CI](https://github.com/Surt/cleo/actions/workflows/ci.yml/badge.svg)](https://github.com/Surt/cleo/actions/workflows/ci.yml)
