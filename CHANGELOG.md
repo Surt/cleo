@@ -5,6 +5,20 @@ All notable changes to cleo will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/Surt/cleo/compare/v0.3.0...v0.4.0) (2026-05-24)
+
+
+### Features
+
+* add release-please for automatic versioning and changelog updates ([41d8b79](https://github.com/Surt/cleo/commit/41d8b79f345a31325cb3cc791f7bcda5224f1a5e))
+* automatic versioning with release-please and CHANGELOG backfill ([7497018](https://github.com/Surt/cleo/commit/7497018e37e21d615580eedfade51238198c2540))
+* transitive dependency resolution and parallel fetching ([0bd6b91](https://github.com/Surt/cleo/commit/0bd6b91e685bfcd2a9791e6ee9c50ce7591d70b1))
+
+
+### Bug Fixes
+
+* address review issues for transitive deps ([8a4a29b](https://github.com/Surt/cleo/commit/8a4a29b78d5320941ba809db781190a258defde5))
+
 ## [Unreleased]
 
 ### Added
