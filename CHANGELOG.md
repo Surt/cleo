@@ -5,6 +5,14 @@ All notable changes to cleo will be documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2](https://github.com/Surt/cleo/compare/v0.4.1...v0.4.2) (2026-05-24)
+
+
+### Documentation
+
+* add logo to README ([85ac2d0](https://github.com/Surt/cleo/commit/85ac2d0b720b58954b26e7c5cc3322cb24969531))
+* add logo to README ([26bc5d9](https://github.com/Surt/cleo/commit/26bc5d9ba4b4381a1fecd9f664ab9c6784f0f95c))
+
 ## [0.4.1](https://github.com/Surt/cleo/compare/v0.4.0...v0.4.1) (2026-05-24)
 
 
